@@ -6,6 +6,7 @@ Windows-Programm, das fertig geslicte G-Code-Dateien auswertet und in 3D zeigt. 
 
 ## Funktionen
 
+- **Favoriten** ganz oben in der Seitenleiste: Wandschleifen, Schalenschichten oben und unten sowie Infill-Muster und -Dichte auf einen Blick. Jede Zeile lässt sich per Stern anheften oder lösen, die Auswahl bleibt gespeichert.
 - **3D-Ansicht** aller Druckpfade mit Layer-Regler. Der aktuelle Layer ist hervorgehoben, Pfad-Kategorien, Fahrwege und Druckbett-Raster lassen sich einzeln ein- und ausblenden.
 - **Einfärbung** nach Pfad-Kategorie, Geschwindigkeit, Volumenstrom oder Layerzeit.
 - **Wände:**

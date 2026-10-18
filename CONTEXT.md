@@ -87,3 +87,9 @@ Ort über (oder unter) Sparse-Infill, an dem weniger gemessene als effektive Sch
 
 **Support-Widerspruch**:
 Support ist in den Slicer-Einstellungen aktiviert, die G-Code-Datei enthält aber keine Support-Pfade.
+
+### Oberfläche
+
+**Favorit**:
+Eine angeheftete Zeile der Seitenleiste, die zusätzlich ganz oben steht; gilt für jede geöffnete G-Code-Datei.
+_Avoid_: Lesezeichen, Pin

@@ -1,4 +1,6 @@
-﻿using System.Globalization;
+﻿using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
@@ -9,7 +11,21 @@ using Microsoft.Win32;
 
 namespace GcodeAnalyzer.App;
 
-public record Row(string Label, string Value, Brush? Brush = null);
+/// <summary>Zeile der Seitenleiste; Label ist auch ohne Abschnitt eindeutig und Schlüssel der Favoriten.</summary>
+public sealed class Row(string label, string value, Brush? brush = null) : INotifyPropertyChanged
+{
+    public string Label { get; } = label;
+    public string Value { get; } = value;
+    public Brush? Brush { get; } = brush;
+    public bool Pinnable { get; init; } = true;
+    bool _isFavorite;
+    public bool IsFavorite
+    {
+        get => _isFavorite;
+        set { if (_isFavorite == value) return; _isFavorite = value; PropertyChanged?.Invoke(this, new(nameof(IsFavorite))); }
+    }
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
 public record Section(string Title, IReadOnlyList<Row> Rows) { public ImageSource? Image { get; init; } }
 public record LegendItem(PathCategory Category, string Name, Brush Brush) { public bool IsVisible { get; set; } }
 
@@ -18,12 +34,17 @@ public partial class MainWindow : Window
     static readonly CultureInfo De = CultureInfo.GetCultureInfo("de-DE");
     PathScene? _scene;
     AnalysisResult? _result;
-    readonly System.Collections.ObjectModel.ObservableCollection<Row> _layerRows = [];
+    readonly ObservableCollection<Row> _layerRows = [];
+    readonly ObservableCollection<Row> _favoriteRows = [];
+    readonly HashSet<string> _favorites = Favorites.Load();
+    List<Section> _sections = [];
 
     public MainWindow()
     {
         InitializeComponent();
         Viewport.EffectsManager = new HelixToolkit.SharpDX.DefaultEffectsManager();
+        FavoriteList.ItemsSource = _favoriteRows;
+        RefreshFavorites();
         // "Öffnen mit" bzw. Start mit Dateipfad als Argument
         if (Environment.GetCommandLineArgs() is [_, var file, ..]) Loaded += (_, _) => _ = Load(file);
     }
@@ -87,52 +108,52 @@ public partial class MainWindow : Window
         Title = $"{r.FileName} – G-Code-Analyzer";
         _result = r;
 
-        var hints = r.Warnings.Select(w => new Row(w, "", new SolidColorBrush(Color.FromRgb(0xE0, 0x80, 0x00)))).ToList();
+        var hints = r.Warnings.Select(w => Info(w, "", new SolidColorBrush(Color.FromRgb(0xE0, 0x80, 0x00)))).ToList();
         if (r.ShortLayers.Count > 0)
-            hints.Add(new($"{r.ShortLayers.Count} Layer unter {N(r.MinLayerTime, 0)} s",
+            hints.Add(Info($"{r.ShortLayers.Count} Layer unter {N(r.MinLayerTime, 0)} s",
                 string.Join(", ", r.ShortLayers.Take(8).Select(i => i + 1)) + (r.ShortLayers.Count > 8 ? " …" : "")));
 
         var walls = r.Walls;
         var under = walls.Layers.Where(w => w.Status == WallStatus.Underrun).ToList();
         var expected = walls.Layers.Where(w => w.Status == WallStatus.ExpectedDeviation).ToList();
         if (under.Count > 0)
-            hints.Add(new($"Wand-Unterschreitung in {under.Count} Layern",
+            hints.Add(Info($"Wand-Unterschreitung in {under.Count} Layern",
                 string.Join(", ", under.Take(8).Select(w => w.Layer + 1)) + (under.Count > 8 ? " …" : ""), StatusBrush(WallStatus.Underrun)));
         var minWall = walls.Layers.MinBy(w => w.Loops);
         if (r.OverFlowLayers.Count > 0)
-            hints.Add(new($"Volumenstrom > {N(r.VolumetricFlowLimit, 0)} mm³/s in {r.OverFlowLayers.Count} Layern",
+            hints.Add(Info($"Volumenstrom > {N(r.VolumetricFlowLimit, 0)} mm³/s in {r.OverFlowLayers.Count} Layern",
                 string.Join(", ", r.OverFlowLayers.Take(8).Select(i => i + 1)) + (r.OverFlowLayers.Count > 8 ? " …" : ""),
                 new SolidColorBrush(PathScene.UnderrunColor)));
         var sup = r.Support;
         var warn = new SolidColorBrush(Color.FromRgb(0xE0, 0x80, 0x00));
         if (sup.Contradiction)
-            hints.Add(new("Support aktiviert, aber", "keine Support-Pfade", warn));
+            hints.Add(Info("Support aktiviert, aber", "keine Support-Pfade", warn));
         var shells = r.Shells;
         if (shells.ThinSpots.Count > 0)
-            hints.Add(new("Dünne Schalenstellen", $"{N(shells.ThinSpots.Count, 0)} Stellen", new SolidColorBrush(PathScene.ThinShellColor)));
+            hints.Add(Info("Dünne Schalenstellen", $"{N(shells.ThinSpots.Count, 0)} Stellen", new SolidColorBrush(PathScene.ThinShellColor)));
+        // "Schalen oben" = effektiv, in Klammern eingestellt (Anzahl / Mindestdicke)
         Row[] ShellRows(string side, ShellSide s) => [
-            new($"{side} eingestellt", s.SetThickness > 0 ? $"{s.SetLayers} Layer | {N(s.SetThickness, 2)} mm" : $"{s.SetLayers} Layer"),
-            new($"{side} effektiv", $"{s.Effective} Layer"),
-            new($"{side} gemessen", s.MeasuredMin is { } mn ? $"min. {mn} | Ø {N(s.MeasuredAvg ?? 0, 1)}" : "–",
+            new($"Schalen {side}", $"{s.Effective} Layer ({s.SetLayers}" + (s.SetThickness > 0 ? $" / {N(s.SetThickness, 2)} mm)" : ")")),
+            new($"Schalen {side} gemessen", s.MeasuredMin is { } mn ? $"min. {mn} | Ø {N(s.MeasuredAvg ?? 0, 1)}" : "–",
                 s.MeasuredMin < s.Effective ? new SolidColorBrush(PathScene.ThinShellColor) : null),
         ];
 
-        Sections.ItemsSource = new[]
+        _sections = new[]
         {
             new Section("Druckstatistik", [
                 new("Geschätzte Druckzeit", r.EstimatedTime is { } t ? Duration(t) : "–"),
-                new("Filament", r.FilamentLengthMm is { } mm ? $"{N(mm / 1000, 2)} m" : "–"),
+                new("Filamentlänge", r.FilamentLengthMm is { } mm ? $"{N(mm / 1000, 2)} m" : "–"),
                 new("Filamentgewicht", r.FilamentWeightG is { } g ? $"{N(g, 2)} g" : "–"),
                 new("Filamentkosten", r.FilamentCost is { } c ? $"{N(c, 2)} €" : "–"),
-                new("Layer", N(r.LayerCount, 0)),
+                new("Layer-Anzahl", N(r.LayerCount, 0)),
                 new("Max. Volumenstrom", $"{N(r.MaxVolumetricFlow, 1)} mm³/s (Grenze {N(r.VolumetricFlowLimit, 0)})",
                     r.OverFlowLayers.Count > 0 ? new SolidColorBrush(PathScene.UnderrunColor) : null),
                 new("Retracts | Z-Hops", $"{N(r.RetractCount, 0)} | {N(r.ZHopCount, 0)}"),
                 new("Fahrweg (Strecke | Zeit)", $"{N(r.TravelDistanceMm / 1000, 1)} m | {N(r.Shares.GetValueOrDefault(PathCategory.Travel)?.TimePercent ?? 0, 1)} %"),
-                new("Zeilen", N(r.LineCount, 0)),
+                new("G-Code-Zeilen", N(r.LineCount, 0)),
             ]),
             new Section("Anteile (Filament | Zeit)", r.Shares.OrderByDescending(kv => kv.Value.TimePercent)
-                .Select(kv => new Row(PathScene.Styles[kv.Key].Name, $"{N(kv.Value.FilamentPercent, 1)} % | {N(kv.Value.TimePercent, 1)} %"))
+                .Select(kv => new Row($"Anteil {PathScene.Styles[kv.Key].Name}", $"{N(kv.Value.FilamentPercent, 1)} % | {N(kv.Value.TimePercent, 1)} %"))
                 .ToList()),
             new Section("Abmessungen", [
                 new("Breite (X)", $"{N(r.Width, 1)} mm"),
@@ -148,40 +169,69 @@ public partial class MainWindow : Window
                 new("Filamenttyp", r.FilamentType ?? "–"),
             ]),
             new Section("Wände", [
-                new("Soll-Wandstärke", walls.TargetLoops > 0 ? $"{walls.TargetLoops} Schleifen | {N(walls.TargetThickness, 2)} mm" : "–"),
-                new("Ist-Wandstärke min.", minWall is null ? "–" : $"{N(minWall.Loops, 1)} Schleifen | {N(minWall.Thickness, 2)} mm",
+                new("Wandschleifen (Soll)", walls.TargetLoops > 0 ? $"{walls.TargetLoops} | {N(walls.TargetThickness, 2)} mm" : "–",
+                    under.Count > 0 ? StatusBrush(WallStatus.Underrun) : null),
+                new("Wandschleifen (Ist, min.)", minWall is null ? "–" : $"{N(minWall.Loops, 1)} | {N(minWall.Thickness, 2)} mm",
                     minWall is null ? null : StatusBrush(minWall.Status)),
-                new("Layer wie Soll", N(walls.Layers.Count(w => w.Status == WallStatus.Ok), 0)),
-                new("Erwartete Abweichung", N(expected.Count, 0), StatusBrush(WallStatus.ExpectedDeviation)),
+                new("Wand-Layer wie Soll", N(walls.Layers.Count(w => w.Status == WallStatus.Ok), 0)),
+                new("Erwartete Wand-Abweichung", N(expected.Count, 0), StatusBrush(WallStatus.ExpectedDeviation)),
                 new("Wand-Unterschreitung", N(under.Count, 0), under.Count > 0 ? StatusBrush(WallStatus.Underrun) : null),
             ]),
-            new Section("Schalen", [.. ShellRows("Oben", shells.Top), .. ShellRows("Unten", shells.Bottom),
+            new Section("Schalen", [.. ShellRows("oben", shells.Top), .. ShellRows("unten", shells.Bottom),
                 new("Dünne Schalenstellen", N(shells.ThinSpots.Count, 0), shells.ThinSpots.Count > 0 ? new SolidColorBrush(PathScene.ThinShellColor) : null),
             ]),
             new Section("Infill", [
-                new("Muster", r.InfillPattern is { Length: > 0 } pat ? char.ToUpper(pat[0]) + pat[1..] : "–"),
-                new("Dichte", r.InfillDensity is { } dens ? $"{N(dens, 0)} %" : "–"),
-                new("Linienbreite", r.InfillLineWidth is { } lw ? $"{N(lw, 2)} mm" : "–"),
+                new("Infill", string.Join(" ", new[] {
+                    r.InfillPattern is { Length: > 0 } pat ? char.ToUpper(pat[0]) + pat[1..] : null,
+                    r.InfillDensity is { } dens ? $"{N(dens, 0)} %" : null }.Where(x => x != null)) is { Length: > 0 } inf ? inf : "–"),
+                new("Infill-Linienbreite", r.InfillLineWidth is { } lw ? $"{N(lw, 2)} mm" : "–"),
                 new("Sparse-Infill (Filament | Zeit)", r.Shares.TryGetValue(PathCategory.SparseInfill, out var sp)
                     ? $"{N(sp.FilamentPercent, 1)} % | {N(sp.TimePercent, 1)} %" : "–"),
                 new("Layer mit massiver Füllung", N(r.Layers.Count(l => l.SolidFillMm > 0), 0)),
                 new("Layer nur mit Sparse-Infill", N(r.Layers.Count(l => l.SolidFillMm == 0 && l.SparseFillMm > 0), 0)),
             ]),
             new Section("Support", [
-                new("Aktiviert", sup.Enabled ? "ja" : "nein"),
-                new("Typ", sup.Type ?? "–"),
-                new("Nur auf Druckbett", sup.BuildPlateOnly is { } bp ? (bp ? "ja" : "nein") : "–"),
+                new("Support aktiviert", sup.Enabled ? "ja" : "nein"),
+                new("Support-Typ", sup.Type ?? "–"),
+                new("Support nur auf Druckbett", sup.BuildPlateOnly is { } bp ? (bp ? "ja" : "nein") : "–"),
                 new("Support-Pfade", sup.HasPaths ? "vorhanden" : "keine", sup.Contradiction ? warn : null),
-                new("Anteil (Filament | Zeit)", sup.HasPaths ? $"{N(sup.FilamentPercent, 1)} % | {N(sup.TimePercent, 1)} %" : "–"),
+                new("Support-Anteil (Filament | Zeit)", sup.HasPaths ? $"{N(sup.FilamentPercent, 1)} % | {N(sup.TimePercent, 1)} %" : "–"),
             ]),
             new Section("Datei", [
-                new("Name", r.FileName),
-                new("Größe", $"{N(r.FileSize / 1024.0 / 1024.0, 1)} MB"),
+                new("Dateiname", r.FileName),
+                new("Dateigröße", $"{N(r.FileSize / 1024.0 / 1024.0, 1)} MB"),
                 new("Slicer", r.SlicerName is null ? "unbekannt" : $"{r.SlicerName} {r.SlicerVersion}"),
             ]) { Image = ToImage(r.Thumbnail) },
         }.Prepend(new Section("Aktueller Layer", _layerRows))
          .Prepend(new Section("Hinweise", hints)).Where(sec => sec.Rows.Count > 0 || sec.Rows == _layerRows).ToList();
+        Sections.ItemsSource = _sections;
+        RefreshFavorites();
         ShowScene(r);
+    }
+
+    static Row Info(string label, string value, Brush? brush = null) => new(label, value, brush) { Pinnable = false };
+
+    void OnStarClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: Row row }) return;
+        if (!_favorites.Remove(row.Label)) _favorites.Add(row.Label);
+        Favorites.Save(_favorites);
+        RefreshFavorites();
+    }
+
+    /// <summary>Sterne setzen und Favoriten in Reihenfolge der Seitenleiste oben anzeigen.</summary>
+    void RefreshFavorites()
+    {
+        _favoriteRows.Clear();
+        foreach (var row in _sections.SelectMany(sec => sec.Rows).Where(row => row.Pinnable))
+        {
+            row.IsFavorite = _favorites.Contains(row.Label);
+            if (row.IsFavorite) _favoriteRows.Add(row);
+        }
+        FavoriteHint.Visibility = _favoriteRows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (_result == null && _favoriteRows.Count == 0 && _favorites.Count > 0)
+            FavoriteHint.Text = "Werte erscheinen nach dem Öffnen einer Datei";
+        else FavoriteHint.Text = "Stern ☆ neben einem Wert anklicken, um ihn hier anzuzeigen";
     }
 
     void UpdateLayerRows(int i)
@@ -190,11 +240,11 @@ public partial class MainWindow : Window
         if (_result is null || i < 0 || i >= _result.LayerCount) return;
         var l = _result.Layers[i];
         double fill = l.SolidFillMm + l.SparseFillMm;
-        _layerRows.Add(new("Z | Höhe", $"{N(l.Z, 2)} mm | {N(l.Height, 2)} mm"));
-        _layerRows.Add(new("Zeit", $"{N(l.Time, 1)} s"));
+        _layerRows.Add(Info("Z | Höhe", $"{N(l.Z, 2)} mm | {N(l.Height, 2)} mm"));
+        _layerRows.Add(Info("Zeit", $"{N(l.Time, 1)} s"));
         if (_result.Walls.Layers.FirstOrDefault(w => w.Layer == i) is { } lw)
-            _layerRows.Add(new("Wandschleifen | Ist-Wandstärke", $"{N(lw.Loops, 1)} | {N(lw.Thickness, 2)} mm", StatusBrush(lw.Status)));
-        _layerRows.Add(new("Füllung massiv | Sparse", fill > 0 ? $"{N(l.SolidFillMm / fill * 100, 0)} % | {N(l.SparseFillMm / fill * 100, 0)} %" : "–"));
+            _layerRows.Add(Info("Wandschleifen | Ist-Wandstärke", $"{N(lw.Loops, 1)} | {N(lw.Thickness, 2)} mm", StatusBrush(lw.Status)));
+        _layerRows.Add(Info("Füllung massiv | Sparse", fill > 0 ? $"{N(l.SolidFillMm / fill * 100, 0)} % | {N(l.SparseFillMm / fill * 100, 0)} %" : "–"));
     }
 
     void ShowScene(AnalysisResult r)

@@ -5,6 +5,48 @@
         xmlns:local="clr-namespace:GcodeAnalyzer.App"
         Title="G-Code-Analyzer" Height="800" Width="1200" MinWidth="700" MinHeight="450"
         Icon="app.ico" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <!-- Zeile der Seitenleiste: Stern zum Anheften, Beschriftung, Wert -->
+        <DataTemplate x:Key="RowTemplate">
+            <DockPanel Margin="0,2">
+                <Button DockPanel.Dock="Left" Click="OnStarClick" Padding="2" Margin="0,0,6,0" MinWidth="0" MinHeight="0"
+                        Background="Transparent" BorderThickness="0" VerticalAlignment="Top"
+                        Visibility="{Binding Pinnable, Converter={StaticResource BoolToVis}}"
+                        ToolTip="Als Favorit oben anzeigen" AutomationProperties.Name="{Binding Label, StringFormat=Favorit {0}}">
+                    <Path Width="12" Height="12" Stretch="Uniform">
+                        <Path.Style>
+                            <Style TargetType="Path">
+                                <Setter Property="Data" Value="{StaticResource Icon.star-regular}"/>
+                                <Setter Property="Fill" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                        <Setter Property="Data" Value="{StaticResource Icon.star}"/>
+                                        <Setter Property="Fill" Value="#F5B400"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Path.Style>
+                    </Path>
+                </Button>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0">
+                    <TextBlock.Style>
+                        <!-- Statusfarbe nur, wenn gesetzt; sonst Textfarbe des Themes -->
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{Binding Brush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Brush}" Value="{x:Null}">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <TextBlock Text="{Binding Label}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+            </DockPanel>
+        </DataTemplate>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -124,36 +166,29 @@
 
         <ScrollViewer Grid.Row="1" Grid.Column="1" Margin="4,0,8,8" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <!-- Favoriten: immer oben, nicht einklappbar -->
+                <Border Margin="0,0,0,8" Padding="12,8" CornerRadius="4" BorderThickness="1"
+                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Path Data="{StaticResource Icon.star}" Fill="#F5B400" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center"/>
+                            <TextBlock Text="Favoriten" FontWeight="SemiBold" FontSize="15" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <ItemsControl x:Name="FavoriteList" ItemTemplate="{StaticResource RowTemplate}" FontSize="15"/>
+                        <TextBlock x:Name="FavoriteHint" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="Stern ☆ neben einem Wert anklicken, um ihn hier anzuzeigen" Visibility="Collapsed"/>
+                    </StackPanel>
+                </Border>
                 <ItemsControl x:Name="Sections">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Expander Header="{Binding Title}" IsExpanded="True" Margin="0,0,0,8" FontWeight="SemiBold">
                                 <StackPanel>
-                                <ItemsControl ItemsSource="{Binding Rows}" Margin="8,4,0,0" FontWeight="Normal">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <DockPanel Margin="0,2">
-                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0">
-                                                    <TextBlock.Style>
-                                                        <!-- Statusfarbe nur, wenn gesetzt; sonst Textfarbe des Themes -->
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="Foreground" Value="{Binding Brush}"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding Brush}" Value="{x:Null}">
-                                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-                                                <TextBlock Text="{Binding Label}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
-                                            </DockPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <!-- Vorschaubild aus der G-Code-Datei (nur im Abschnitt "Datei") -->
-                                <Image Source="{Binding Image}" Stretch="Uniform" MaxHeight="180" Margin="0,8,0,0"/>
+                                    <ItemsControl ItemsSource="{Binding Rows}" Margin="8,4,0,0" FontWeight="Normal"
+                                                  ItemTemplate="{StaticResource RowTemplate}"/>
+                                    <!-- Vorschaubild aus der G-Code-Datei (nur im Abschnitt "Datei") -->
+                                    <Image Source="{Binding Image}" Stretch="Uniform" MaxHeight="180" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Expander>
                         </DataTemplate>
