@@ -4,7 +4,7 @@
         xmlns:hx="http://helix-toolkit.org/wpf/SharpDX"
         xmlns:local="clr-namespace:GcodeAnalyzer.App"
         Title="G-Code-Analyzer" Height="800" Width="1200" MinWidth="700" MinHeight="450"
-        AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
+        Icon="app.ico" AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -16,7 +16,10 @@
         </Grid.ColumnDefinitions>
 
         <DockPanel Grid.ColumnSpan="2" Margin="8" LastChildFill="True">
-            <Button DockPanel.Dock="Left" Padding="12,4" Click="OnOpen">Datei öffnen …</Button>
+            <Button DockPanel.Dock="Left" Padding="12,4" Click="OnOpen" Style="{StaticResource IconButton}"
+                    Tag="{StaticResource Icon.folder-open}" Content="Datei öffnen …"/>
+            <Button DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0" Click="OnAbout" Style="{StaticResource IconButton}"
+                    Tag="{StaticResource Icon.circle-info}" Content="Über" AutomationProperties.Name="Über"/>
             <ProgressBar x:Name="Progress" DockPanel.Dock="Right" Width="200" Height="14" Maximum="1" Visibility="Collapsed"/>
             <TextBlock x:Name="Status" Margin="12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
@@ -51,6 +54,13 @@
             <Border x:Name="LegendPanel" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
                     Background="#C0202020" CornerRadius="4" Padding="8,6">
                 <StackPanel>
+                    <StackPanel.Resources>
+                        <!-- Fluent-Checkboxen sind 32 px hoch; in der Legende kompakt -->
+                        <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+                            <Setter Property="MinHeight" Value="22"/>
+                            <Setter Property="Padding" Value="6,0,0,0"/>
+                        </Style>
+                    </StackPanel.Resources>
                     <ComboBox x:Name="ColorModeBox" SelectedIndex="0" Margin="0,0,0,6" SelectionChanged="OnColorModeChanged"
                               AutomationProperties.Name="Einfärbung">
                         <ComboBoxItem>Pfad-Kategorie</ComboBoxItem>
@@ -68,7 +78,7 @@
                     <ItemsControl x:Name="Legend">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsVisible}" Margin="0,2" Checked="OnLegendClick" Unchecked="OnLegendClick"
+                                <CheckBox IsChecked="{Binding IsVisible}" Margin="0" Checked="OnLegendClick" Unchecked="OnLegendClick"
                                           AutomationProperties.Name="{Binding Name}">
                                     <StackPanel Orientation="Horizontal">
                                         <Rectangle Width="12" Height="12" Fill="{Binding Brush}" Margin="0,0,6,0"/>
@@ -98,13 +108,15 @@
                     <Run Text="Layer "/><Run x:Name="LayerText"/>
                 </TextBlock>
                 <Button DockPanel.Dock="Right" Padding="10,2" Margin="4,0,0,0" Click="OnAllLayers">Alle</Button>
-                <Button DockPanel.Dock="Right" Width="28" Margin="4,0,0,0" Click="OnLayerPlus">+</Button>
-                <Button DockPanel.Dock="Right" Width="28" Margin="8,0,0,0" Click="OnLayerMinus">−</Button>
+                <Button DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnLayerPlus" Style="{StaticResource IconButton}"
+                        Tag="{StaticResource Icon.plus}" Content="" ToolTip="Nächster Layer" AutomationProperties.Name="Nächster Layer"/>
+                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnLayerMinus" Style="{StaticResource IconButton}"
+                        Tag="{StaticResource Icon.minus}" Content="" ToolTip="Vorheriger Layer" AutomationProperties.Name="Vorheriger Layer"/>
                 <Slider x:Name="LayerSlider" Minimum="1" IsSnapToTickEnabled="True" TickFrequency="1"
                         SmallChange="1" LargeChange="10" VerticalAlignment="Center" ValueChanged="OnLayerChanged"/>
             </DockPanel>
 
-            <Expander x:Name="ChartPanel" Grid.Row="2" Header="Zeit pro Layer (Wurzelskala)" Foreground="White" Margin="10,0,10,6"
+            <Expander x:Name="ChartPanel" Grid.Row="2" Header="Zeit pro Layer (Wurzelskala)" Margin="10,0,10,6"
                       IsExpanded="True" Visibility="Collapsed">
                 <local:LayerTimeChart x:Name="Chart" Height="110" Margin="0,4,0,0" LayerClicked="OnChartLayerClicked"/>
             </Expander>
@@ -121,9 +133,21 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <DockPanel Margin="0,2">
-                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190" Foreground="{Binding Brush, TargetNullValue={x:Static SystemColors.ControlTextBrush}}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0"/>
-                                                <TextBlock Text="{Binding Label}" Foreground="#555" TextWrapping="Wrap"/>
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0">
+                                                    <TextBlock.Style>
+                                                        <!-- Statusfarbe nur, wenn gesetzt; sonst Textfarbe des Themes -->
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{Binding Brush}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Brush}" Value="{x:Null}">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding Label}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
                                             </DockPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

@@ -1,4 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Resource Include="app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\GcodeAnalyzer.Core\GcodeAnalyzer.Core.csproj" />
@@ -14,6 +18,18 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyName>GcodeAnalyzer</AssemblyName>
+    <Product>G-Code-Analyzer</Product>
+    <Version>1.0.0</Version>
+    <!-- WPF0001: ThemeMode (Fluent) ist in .NET 9 als experimentell markiert -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+    <!-- dotnet publish: eine selbstständige, komprimierte .exe ohne installiertes .NET -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
 </Project>

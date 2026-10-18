@@ -34,6 +34,18 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog(this) == true) _ = Load(dlg.FileName);
     }
 
+    void OnAbout(object sender, RoutedEventArgs e)
+    {
+        var v = typeof(MainWindow).Assembly.GetName().Version;
+        MessageBox.Show(this,
+            $"G-Code-Analyzer {v?.ToString(3)}\n\n" +
+            "Liest G-Code aus OrcaSlicer, Bambu Studio und PrusaSlicer und wertet Wände, Schalen, Infill und Support aus.\n\n" +
+            "Icons: Font Awesome Free 7.3.1 von Fonticons, Inc. (fontawesome.com), lizenziert unter CC BY 4.0 " +
+            "(creativecommons.org/licenses/by/4.0).\n" +
+            "3D-Darstellung: Helix Toolkit (MIT-Lizenz).",
+            "Über G-Code-Analyzer", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
     void OnDragOver(object sender, DragEventArgs e)
     {
         e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
@@ -218,7 +230,7 @@ public partial class MainWindow : Window
         var max = pts.Aggregate(System.Numerics.Vector3.Max);
         var c = (min + max) / 2;
         float d = Math.Max(Math.Max(max.X - min.X, max.Y - min.Y), max.Z - min.Z) * 1.6f + 10;
-        var cam = (PerspectiveCamera)Viewport.Camera;
+        if (Viewport.Camera is not PerspectiveCamera cam) return;
         cam.Position = new System.Windows.Media.Media3D.Point3D(c.X, c.Y - d, c.Z + d * 0.8);
         cam.LookDirection = new System.Windows.Media.Media3D.Vector3D(0, d, -d * 0.8);
         cam.UpDirection = new System.Windows.Media.Media3D.Vector3D(0, 0, 1);

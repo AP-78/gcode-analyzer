@@ -12,6 +12,7 @@ public sealed class LayerTimeChart : FrameworkElement
     static readonly Brush Bar = new SolidColorBrush(Color.FromRgb(0x4D, 0x80, 0xBA));
     static readonly Brush Short = new SolidColorBrush(Color.FromRgb(0xF0, 0x40, 0x40));
     static readonly Brush CurrentBar = new SolidColorBrush(Color.FromRgb(0xFF, 0xE1, 0x4D));
+    static readonly Brush Background = new SolidColorBrush(Color.FromRgb(0x30, 0x30, 0x30));
     static readonly Brush Text = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
     static readonly Pen Limit = new(new SolidColorBrush(Color.FromRgb(0xF0, 0x40, 0x40)), 1) { DashStyle = DashStyles.Dash };
     static readonly CultureInfo De = CultureInfo.GetCultureInfo("de-DE");
@@ -49,7 +50,7 @@ public sealed class LayerTimeChart : FrameworkElement
 
     protected override void OnRender(DrawingContext dc)
     {
-        dc.DrawRectangle(Brushes.Transparent, null, new Rect(RenderSize)); // Mausereignisse auf der ganzen Fläche
+        dc.DrawRectangle(Background, null, new Rect(RenderSize)); // dunkel in beiden Themes, fängt Mausereignisse auf der ganzen Fläche
         if (_layers.Count == 0 || ActualWidth <= Left) return;
         double max = Math.Max(_layers.Max(l => l.Time), _limit) * 1.05;
         double h = ActualHeight - Bottom - Top, w = (ActualWidth - Left) / _layers.Count;
