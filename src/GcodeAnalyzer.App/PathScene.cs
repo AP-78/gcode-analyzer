@@ -133,7 +133,7 @@ public sealed class PathScene
         if (_current >= 0 && _current < _models.Length) SetColors(_current, bright: false);
         _current = current;
         for (int i = 0; i < _models.Length; i++) _models[i].Visibility = i <= current ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-        SetColors(current, bright: true);
+        if (current >= 0 && current < _models.Length) SetColors(current, bright: true);
     }
 
     void SetColors(int i, bool bright)

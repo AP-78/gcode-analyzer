@@ -123,7 +123,7 @@
                                             <DockPanel Margin="0,2">
                                                 <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190" Foreground="{Binding Brush, TargetNullValue={x:Static SystemColors.ControlTextBrush}}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0"/>
-                                                <TextBlock Text="{Binding Label}" Foreground="#555"/>
+                                                <TextBlock Text="{Binding Label}" Foreground="#555" TextWrapping="Wrap"/>
                                             </DockPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

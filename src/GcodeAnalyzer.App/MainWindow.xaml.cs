@@ -76,7 +76,7 @@ public partial class MainWindow : Window
         Preview.Source = ToImage(r.Thumbnail);
         _result = r;
 
-        var hints = new List<Row>();
+        var hints = r.Warnings.Select(w => new Row(w, "", new SolidColorBrush(Color.FromRgb(0xE0, 0x80, 0x00)))).ToList();
         if (r.ShortLayers.Count > 0)
             hints.Add(new($"{r.ShortLayers.Count} Layer unter {N(r.MinLayerTime, 0)} s",
                 string.Join(", ", r.ShortLayers.Take(8).Select(i => i + 1)) + (r.ShortLayers.Count > 8 ? " …" : "")));

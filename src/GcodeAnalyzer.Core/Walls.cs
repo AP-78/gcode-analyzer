@@ -11,12 +11,14 @@ public sealed record WallAnalysis(int TargetLoops, double OuterWidth, double Inn
     public double TargetThickness => Thickness(TargetLoops);
     public double Thickness(double loops) => loops <= 0 ? 0 : OuterWidth + (loops - 1) * InnerWidth;
 
-    internal static WallAnalysis From(IReadOnlyList<Layer> layers, Func<string, double?> num)
+    internal static WallAnalysis From(IReadOnlyList<Layer> layers, IReadOnlyDictionary<string, string> settings,
+        Func<string, double?> num, Func<string, double?> width)
     {
-        double lineWidth = num("line_width") ?? num("nozzle_diameter") ?? 0.4;
-        double Width(params string[] keys) => keys.Select(num).FirstOrDefault(v => v > 0) ?? lineWidth;
+        double lineWidth = width("line_width") ?? width("extrusion_width") ?? num("nozzle_diameter") ?? 0.4;
+        double Width(params string[] keys) => keys.Select(width).FirstOrDefault(v => v > 0) ?? lineWidth;
         int target = (int)(num("wall_loops") ?? num("perimeters") ?? 0);
-        bool oneWallTop = num("only_one_wall_top") == 1 || num("top_one_perimeter_type") > 0;
+        // PrusaSlicer: top_one_perimeter_type = none | top | topmost
+        bool oneWallTop = num("only_one_wall_top") == 1 || settings.GetValueOrDefault("top_one_perimeter_type") is "top" or "topmost";
         bool oneWallFirst = num("only_one_wall_first_layer") == 1;
         var w = new WallAnalysis(target, Width("outer_wall_line_width", "external_perimeter_extrusion_width"),
             Width("inner_wall_line_width", "perimeter_extrusion_width"), []);

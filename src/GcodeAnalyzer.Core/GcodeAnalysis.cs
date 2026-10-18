@@ -24,6 +24,8 @@ public static partial class GcodeAnalysis
         var layers = new List<Layer>();
         var segs = new List<Segment>();          // Segmente des laufenden Layers (vor dem ersten Layer-Wechsel: Startcode)
         float layerZ = float.NaN, layerH = 0;
+        bool explicitZ = false;                  // Z aus ;Z:-Kommentar, sonst höchste Extrusion des Layers
+        var tools = new HashSet<int>();
         var category = PathCategory.Other;
 
         bool relE = false, relXyz = false;
@@ -42,7 +44,9 @@ public static partial class GcodeAnalysis
         void FlushLayer()
         {
             if (float.IsNaN(layerZ)) return; // Startcode wandert in den ersten Layer
-            layers.Add(new Layer(layers.Count, layerZ, layerH, segs.ToArray(), layerTime));
+            if (segs.Count == 0 && layerTime == 0) return; // doppelte Layer-Markierung
+            var z = explicitZ || !segs.Any(sg => sg.Extrusion > 0) ? layerZ : segs.Where(sg => sg.Extrusion > 0).Max(sg => sg.To.Z);
+            layers.Add(new Layer(layers.Count, z, layerH, segs.ToArray(), layerTime));
             segs.Clear();
             layerTime = 0;
         }
@@ -71,15 +75,17 @@ public static partial class GcodeAnalysis
                     else thumb.Append(line.AsSpan(1).Trim());
                     continue;
                 }
-                if (line.StartsWith(";TYPE:", StringComparison.Ordinal)) { category = PathCategories.FromMarker(line[6..]); continue; }
-                if (line.StartsWith(";LAYER_CHANGE", StringComparison.Ordinal))
+                // OrcaSlicer/PrusaSlicer: ;TYPE: ;LAYER_CHANGE ;Z: ;HEIGHT:  Bambu Studio: ; FEATURE: ; CHANGE_LAYER ; Z_HEIGHT: ; LAYER_HEIGHT:  Cura: ;LAYER:
+                if (Marker(line, ";TYPE:", "; FEATURE:") is { } type) { category = PathCategories.FromMarker(type); continue; }
+                if (line.StartsWith(";LAYER_CHANGE", StringComparison.Ordinal) || line.StartsWith("; CHANGE_LAYER", StringComparison.Ordinal)
+                    || line.StartsWith(";LAYER:", StringComparison.Ordinal))
                 {
                     FlushLayer();
-                    layerZ = pos.Z; layerH = 0;
+                    layerZ = pos.Z; layerH = 0; explicitZ = false;
                     continue;
                 }
-                if (line.StartsWith(";Z:", StringComparison.Ordinal)) { if (float.TryParse(line.AsSpan(3), NumberStyles.Float, Inv, out var lz)) layerZ = lz; continue; }
-                if (line.StartsWith(";HEIGHT:", StringComparison.Ordinal)) { if (float.TryParse(line.AsSpan(8), NumberStyles.Float, Inv, out var lh)) layerH = lh; continue; }
+                if (Marker(line, ";Z:", "; Z_HEIGHT:") is { } zs) { if (float.TryParse(zs, NumberStyles.Float, Inv, out var lz)) { layerZ = lz; explicitZ = true; } continue; }
+                if (Marker(line, ";HEIGHT:", "; LAYER_HEIGHT:") is { } hs) { if (float.TryParse(hs, NumberStyles.Float, Inv, out var lh)) layerH = lh; continue; }
                 if (line.StartsWith("; thumbnail begin ", StringComparison.Ordinal))
                 {
                     var m = ThumbBegin().Match(line);
@@ -192,13 +198,16 @@ public static partial class GcodeAnalysis
                 case "M104" or "M109": nozzle ??= SValue(args); break;
                 case "M140" or "M190": bed ??= SValue(args); break;
             }
+            if (cmd.Length > 1 && cmd[0] == 'T' && int.TryParse(cmd[1..], out var tool)) tools.Add(tool);
         }
         FlushLayer();
         if (layers.Count == 0 && segs.Count > 0) layers.Add(new Layer(0, pos.Z, 0, segs.ToArray(), layerTime));
         progress?.Report(1.0);
 
         // ponytail: Zeit ohne Beschleunigung, linear auf die Slicer-Gesamtzeit skaliert; echte Planer-Simulation, falls Verhältnisse zwischen Layern nicht reichen
-        var estimated = settings.TryGetValue("estimated printing time (normal mode)", out var et) ? ParseDuration(et) : null;
+        // Bambu Studio: "; model printing time: 1h 10m 41s; total estimated time: 1h 17m 20s"
+        var estimated = settings.TryGetValue("estimated printing time (normal mode)", out var et) ? ParseDuration(et)
+            : settings.TryGetValue("model printing time", out var mt) ? ParseDuration(mt.Split("total estimated time:").Last()) : null;
         double raw = layers.Sum(l => l.Time);
         double scale = estimated is { } est && raw > 0 ? est.TotalSeconds / raw : 1;
         for (int i = 0; i < layers.Count; i++) layers[i] = layers[i] with { Time = layers[i].Time * scale };
@@ -252,9 +261,10 @@ public static partial class GcodeAnalysis
             TravelDistanceMm = travel,
             MinLayerTime = minLayerTime,
             ShortLayers = layers.Where(l => l.Time < minLayerTime).Select(l => l.Index).ToList(),
-            FilamentLengthMm = Num(settings, "filament used [mm]"),
-            FilamentWeightG = Num(settings, "total filament used [g]") ?? Num(settings, "filament used [g]"),
-            FilamentCost = Num(settings, "total filament cost"),
+            FilamentLengthMm = Num(settings, "filament used [mm]") ?? Num(settings, "total filament length [mm]"),
+            FilamentWeightG = Num(settings, "total filament used [g]") ?? Num(settings, "filament used [g]") ?? Num(settings, "total filament weight [g]"),
+            FilamentCost = Num(settings, "total filament cost") ?? Num(settings, "filament cost"),
+            Warnings = Warnings(slicer, layers, tools),
             Width = any ? maxX - minX : 0,
             Depth = any ? maxY - minY : 0,
             Height = maxZ,
@@ -266,9 +276,9 @@ public static partial class GcodeAnalysis
             FilamentType = settings.GetValueOrDefault("filament_type"),
             InfillPattern = settings.GetValueOrDefault("sparse_infill_pattern") ?? settings.GetValueOrDefault("fill_pattern"),
             InfillDensity = Num(settings, "sparse_infill_density") ?? Num(settings, "fill_density"),
-            InfillLineWidth = Num(settings, "sparse_infill_line_width") ?? Num(settings, "infill_extrusion_width"),
+            InfillLineWidth = Width(settings, "sparse_infill_line_width") ?? Width(settings, "infill_extrusion_width"),
             Support = SupportAnalysis.From(settings, shares),
-            Walls = WallAnalysis.From(layers, k => Num(settings, k)),
+            Walls = WallAnalysis.From(layers, settings, k => Num(settings, k), k => Width(settings, k)),
             Shells = ShellAnalysis.From(layers, k => Num(settings, k), Num(settings, "layer_height")),
             Bed = ParseBed(settings.GetValueOrDefault("printable_area") ?? settings.GetValueOrDefault("bed_shape")),
         };
@@ -299,9 +309,37 @@ public static partial class GcodeAnalysis
         if (s == null) return null;
         var c = s.Split(',').Select(p => p.Split('x'))
             .Where(p => p.Length == 2)
-            .Select(p => (float.Parse(p[0], Inv), float.Parse(p[1], Inv))).ToList();
+            .Select(p => (float.TryParse(p[0], Inv, out var x) ? x : float.NaN, float.TryParse(p[1], Inv, out var y) ? y : float.NaN))
+            .Where(p => !float.IsNaN(p.Item1) && !float.IsNaN(p.Item2)).ToList();
         if (c.Count < 3) return null;
         return (c.Min(p => p.Item1), c.Min(p => p.Item2), c.Max(p => p.Item1), c.Max(p => p.Item2));
+    }
+
+    static readonly string[] Supported = ["OrcaSlicer", "BambuStudio", "PrusaSlicer", "SuperSlicer"];
+
+    static List<string> Warnings(string? slicer, List<Layer> layers, HashSet<int> tools)
+    {
+        var w = new List<string>();
+        if (layers.Count == 0) w.Add("Keine Druckbewegungen gefunden. Ist das eine G-Code-Datei?");
+        else if (slicer == null) w.Add("Slicer nicht erkannt; Wände, Schalen und Infill können fehlen.");
+        else if (!Supported.Contains(slicer, StringComparer.OrdinalIgnoreCase))
+            w.Add($"{slicer} wird nicht unterstützt; Wände, Schalen und Infill können fehlen.");
+        if (tools.Count > 1) w.Add($"Mehrere Filamente ({tools.Count}); Verbrauch und Anteile gelten für alle zusammen.");
+        return w;
+    }
+
+    static string? Marker(string line, string a, string b) =>
+        line.StartsWith(a, StringComparison.Ordinal) ? line[a.Length..].Trim()
+        : line.StartsWith(b, StringComparison.Ordinal) ? line[b.Length..].Trim() : null;
+
+    /// <summary>Linienbreite in mm; PrusaSlicer erlaubt "112%" (der Düse) und 0 für automatisch.</summary>
+    static double? Width(Dictionary<string, string> s, string key)
+    {
+        if (!s.TryGetValue(key, out var v)) return null;
+        v = v.Split(',')[0].Trim();
+        bool pct = v.EndsWith('%');
+        if (!double.TryParse(v.TrimEnd('%'), NumberStyles.Float, Inv, out var d) || d <= 0) return null;
+        return pct ? (Num(s, "nozzle_diameter") ?? 0.4) * d / 100 : d;
     }
 
     static double? SValue(ReadOnlySpan<char> args)
@@ -334,7 +372,8 @@ public static partial class GcodeAnalysis
         return t;
     }
 
-    [GeneratedRegex(@"^; generated by (\S+) (\S+)")] private static partial Regex GeneratedBy();
+    // "; generated by OrcaSlicer 2.4.2 on …", Bambu Studio "; BambuStudio 01.09.00.70", Cura ";Generated with Cura_SteamEngine 5.7.0"
+    [GeneratedRegex(@"^;\s*(?:generated by |Generated with )?(OrcaSlicer|BambuStudio|PrusaSlicer|SuperSlicer|Cura_SteamEngine) v?(\d[\w.\-+]*)")] private static partial Regex GeneratedBy();
     [GeneratedRegex(@"^; ([^=:]+?)\s*[=:]\s*(.*)$")] private static partial Regex Setting();
     [GeneratedRegex(@"(\d+)x(\d+)")] private static partial Regex ThumbBegin();
     [GeneratedRegex(@"(\d+)\s*([dhms])")] private static partial Regex Duration();

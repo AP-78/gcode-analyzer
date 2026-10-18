@@ -16,6 +16,9 @@ public sealed record AnalysisResult
     public byte[]? Thumbnail { get; init; }
 
     public required IReadOnlyList<Layer> Layers { get; init; }
+
+    /// <summary>Allgemeine Hinweise: unbekannte Datei, nicht unterstützter Slicer, mehrere Filamente.</summary>
+    public required IReadOnlyList<string> Warnings { get; init; }
     public int LayerCount => Layers.Count;
     public TimeSpan? EstimatedTime { get; init; }
     public double? FilamentLengthMm { get; init; }
