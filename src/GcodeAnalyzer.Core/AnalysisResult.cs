@@ -44,6 +44,7 @@ public sealed record AnalysisResult
 
     public required WallAnalysis Walls { get; init; }
     public required ShellAnalysis Shells { get; init; }
+    public required SupportAnalysis Support { get; init; }
 
     /// <summary>Infill-Einstellungen; Dichte in Prozent, Linienbreite in mm.</summary>
     public string? InfillPattern { get; init; }

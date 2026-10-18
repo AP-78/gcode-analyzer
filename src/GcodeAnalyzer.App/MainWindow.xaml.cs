@@ -88,6 +88,10 @@ public partial class MainWindow : Window
             hints.Add(new($"Wand-Unterschreitung in {under.Count} Layern",
                 string.Join(", ", under.Take(8).Select(w => w.Layer + 1)) + (under.Count > 8 ? " …" : ""), StatusBrush(WallStatus.Underrun)));
         var minWall = walls.Layers.MinBy(w => w.Loops);
+        var sup = r.Support;
+        var warn = new SolidColorBrush(Color.FromRgb(0xE0, 0x80, 0x00));
+        if (sup.Contradiction)
+            hints.Add(new("Support aktiviert, aber", "keine Support-Pfade", warn));
         var shells = r.Shells;
         if (shells.ThinSpots.Count > 0)
             hints.Add(new("Dünne Schalenstellen", $"{N(shells.ThinSpots.Count, 0)} Stellen", new SolidColorBrush(PathScene.ThinShellColor)));
@@ -121,6 +125,13 @@ public partial class MainWindow : Window
             ]),
             new Section("Schalen", [.. ShellRows("Oben", shells.Top), .. ShellRows("Unten", shells.Bottom),
                 new("Dünne Schalenstellen", N(shells.ThinSpots.Count, 0), shells.ThinSpots.Count > 0 ? new SolidColorBrush(PathScene.ThinShellColor) : null),
+            ]),
+            new Section("Support", [
+                new("Aktiviert", sup.Enabled ? "ja" : "nein"),
+                new("Typ", sup.Type ?? "–"),
+                new("Nur auf Druckbett", sup.BuildPlateOnly is { } bp ? (bp ? "ja" : "nein") : "–"),
+                new("Support-Pfade", sup.HasPaths ? "vorhanden" : "keine", sup.Contradiction ? warn : null),
+                new("Anteil (Filament | Zeit)", sup.HasPaths ? $"{N(sup.FilamentPercent, 1)} % | {N(sup.TimePercent, 1)} %" : "–"),
             ]),
             new Section("Infill", [
                 new("Muster", r.InfillPattern is { Length: > 0 } pat ? char.ToUpper(pat[0]) + pat[1..] : "–"),
