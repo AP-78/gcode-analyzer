@@ -38,6 +38,10 @@ public class MotionTests(ITestOutputHelper o)
     }
 
     [Fact]
+    public void FirmwareRetractFollowedByERetractCountsOnce() =>
+        Assert.Equal(2, Snippet("M83\nG1 X0 Y0 Z0.2\nG10\nG1 E-0.5\nG11\nG1 X5 Y0 E1\nG10\n").RetractCount);
+
+    [Fact]
     public void Reference()
     {
         var path = Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "input"), "*.gcode").Single();

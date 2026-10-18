@@ -11,7 +11,7 @@ namespace GcodeAnalyzer.App;
 
 public enum ColorMode { Category, Speed, Flow, LayerTime }
 
-/// <summary>Ein Linienmodell pro Layer; der Layer-Regler schaltet nur Sichtbarkeit und Farben um.</summary>
+/// <summary>3D-Pfade; Layer-Regler und Legende schalten nur Sichtbarkeit, Einfärbung tauscht nur Farben.</summary>
 public sealed class PathScene
 {
     public static readonly IReadOnlyDictionary<PathCategory, (string Name, Media.Color Color)> Styles = new Dictionary<PathCategory, (string, Media.Color)>
@@ -34,8 +34,20 @@ public sealed class PathScene
     static readonly Vector4 Background = new(0.19f, 0.19f, 0.19f, 1);
 
     readonly AnalysisResult _result;
-    readonly LineGeometryModel3D[] _models;
-    Color4Collection?[] _bright = [], _dim = [];
+
+    /// <summary>Ein Linienmodell je Layer und Pfad-Kategorie; Positionen werden nur einmal aufgebaut.</summary>
+    // ponytail: Zahl der Modelle = Layer × Kategorien (hier ~1.300); bei sehr vielen Layern Draw-Calls bündeln, falls es ruckelt
+    sealed class Part(int layer, PathCategory category, Segment[] segments, LineGeometryModel3D model)
+    {
+        public int Layer { get; } = layer;
+        public PathCategory Category { get; } = category;
+        public Segment[] Segments { get; } = segments;
+        public LineGeometryModel3D Model { get; } = model;
+        public Color4Collection Bright = [], Dim = [];
+    }
+
+    readonly List<Part> _parts = [];
+    readonly List<Part>[] _byLayer;
     int _current = -1;
 
     public GroupModel3D Root { get; } = new();
@@ -69,8 +81,24 @@ public sealed class PathScene
         _minTime = result.Layers.Count > 0 ? result.Layers.Min(l => l.Time) : 0;
         _maxTime = Math.Max(_minTime + 1, result.Layers.Count > 0 ? result.Layers.Max(l => l.Time) : 1);
         Visible = result.Layers.SelectMany(l => l.Segments).Select(s => s.Category).Where(c => c != PathCategory.Travel).ToHashSet();
-        _models = result.Layers.Select(_ => new LineGeometryModel3D { Thickness = 1, Color = Colors.White }).ToArray();
-        foreach (var m in _models) Root.Children.Add(m);
+
+        _byLayer = new List<Part>[result.Layers.Count];
+        foreach (var layer in result.Layers)
+        {
+            _byLayer[layer.Index] = [];
+            foreach (var g in layer.Segments.GroupBy(s => s.Category))
+            {
+                var segs = g.ToArray();
+                var pos = new Vector3Collection(segs.Length * 2);
+                var idx = new IntCollection(segs.Length * 2);
+                foreach (var s in segs) { idx.Add(pos.Count); pos.Add(s.From); idx.Add(pos.Count); pos.Add(s.To); }
+                var model = new LineGeometryModel3D { Thickness = 1, Color = Colors.White, Geometry = new LineGeometry3D { Positions = pos, Indices = idx } };
+                var part = new Part(layer.Index, g.Key, segs, model);
+                _parts.Add(part);
+                _byLayer[layer.Index].Add(part);
+                Root.Children.Add(model);
+            }
+        }
         Grid = BuildGrid(result);
         Root.Children.Add(Grid);
         var tb = new LineBuilder();
@@ -82,29 +110,22 @@ public sealed class PathScene
         }
         ThinShells = new LineGeometryModel3D { Geometry = result.Shells.ThinSpots.Count > 0 ? tb.ToLineGeometry3D() : null, Color = ThinShellColor, Thickness = 2 };
         Root.Children.Add(ThinShells);
-        Rebuild();
+        Recolor();
     }
 
-    public IEnumerable<PathCategory> Present =>
-        _result.Layers.SelectMany(l => l.Segments).Select(s => s.Category).Distinct().Order();
+    public IEnumerable<PathCategory> Present => _parts.Select(p => p.Category).Distinct().Order();
 
-    /// <summary>Geometrie aller Layer neu aufbauen, z. B. nach Ein-/Ausblenden einer Pfad-Kategorie.</summary>
-    // ponytail: baut auf dem UI-Thread; bei sehr großen Dateien in den Hintergrund verlagern, falls es hakt
-    public void Rebuild()
+    /// <summary>Farben nach Einfärbung und Wand-Markierung neu berechnen; die Geometrie bleibt.</summary>
+    public void Recolor()
     {
-        _bright = new Color4Collection?[_models.Length];
-        _dim = new Color4Collection?[_models.Length];
-        for (int i = 0; i < _models.Length; i++)
+        foreach (var p in _parts)
         {
-            var pos = new Vector3Collection();
-            var idx = new IntCollection();
-            var bright = new Color4Collection();
-            var dim = new Color4Collection();
-            var status = MarkWalls ? _wallStatus.GetValueOrDefault(i) : WallStatus.Ok;
-            foreach (var s in _result.Layers[i].Segments)
+            var status = MarkWalls ? _wallStatus.GetValueOrDefault(p.Layer) : WallStatus.Ok;
+            bool wall = p.Category is PathCategory.OuterWall or PathCategory.InnerWall;
+            p.Bright = new Color4Collection(p.Segments.Length * 2);
+            p.Dim = new Color4Collection(p.Segments.Length * 2);
+            foreach (var s in p.Segments)
             {
-                if (!Visible.Contains(s.Category)) continue;
-                bool wall = s.Category is PathCategory.OuterWall or PathCategory.InnerWall;
                 var v = Mode == ColorMode.Category || s.Category == PathCategory.Travel
                     ? ToVec(!wall || status == WallStatus.Ok ? Styles[s.Category].Color
                         : status == WallStatus.Underrun ? UnderrunColor : ExpectedColor)
@@ -112,36 +133,34 @@ public sealed class PathScene
                     {
                         ColorMode.Speed => s.Speed / _maxSpeed,
                         ColorMode.Flow => s.VolumetricFlow(_result.FilamentArea) / _maxFlow,
-                        _ => (_result.Layers[i].Time - _minTime) / (_maxTime - _minTime),
+                        _ => (_result.Layers[p.Layer].Time - _minTime) / (_maxTime - _minTime),
                     });
                 var c = ToColor4(v);
                 var d = ToColor4(Vector4.Lerp(v, Background, 0.55f));
-                idx.Add(pos.Count); pos.Add(s.From);
-                idx.Add(pos.Count); pos.Add(s.To);
-                bright.Add(c); bright.Add(c);
-                dim.Add(d); dim.Add(d);
+                p.Bright.Add(c); p.Bright.Add(c);
+                p.Dim.Add(d); p.Dim.Add(d);
             }
-            _bright[i] = bright;
-            _dim[i] = dim;
-            _models[i].Geometry = new LineGeometry3D { Positions = pos, Indices = idx, Colors = i == _current ? bright : dim };
+            SetColors(p, p.Layer == _current);
         }
     }
 
-    /// <summary>Layer 0..current zeigen, current hervorheben.</summary>
+    /// <summary>Layer 0..current und eingeschaltete Pfad-Kategorien zeigen, current hervorheben.</summary>
     public void ShowUpTo(int current)
     {
-        if (_current >= 0 && _current < _models.Length) SetColors(_current, bright: false);
+        int previous = _current;
         _current = current;
-        for (int i = 0; i < _models.Length; i++) _models[i].Visibility = i <= current ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-        if (current >= 0 && current < _models.Length) SetColors(current, bright: true);
+        foreach (var p in _parts)
+            p.Model.Visibility = p.Layer <= current && Visible.Contains(p.Category)
+                ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+        if (previous >= 0 && previous < _byLayer.Length) foreach (var p in _byLayer[previous]) SetColors(p, false);
+        if (current >= 0 && current < _byLayer.Length) foreach (var p in _byLayer[current]) SetColors(p, true);
     }
 
-    void SetColors(int i, bool bright)
+    static void SetColors(Part p, bool bright)
     {
-        var m = _models[i];
-        m.Thickness = bright ? 2 : 1;
-        if (m.Geometry is LineGeometry3D g)
-            m.Geometry = new LineGeometry3D { Positions = g.Positions, Indices = g.Indices, Colors = bright ? _bright[i] : _dim[i] };
+        p.Model.Thickness = bright ? 2 : 1;
+        if (p.Model.Geometry is LineGeometry3D g)
+            p.Model.Geometry = new LineGeometry3D { Positions = g.Positions, Indices = g.Indices, Colors = bright ? p.Bright : p.Dim };
     }
 
     static LineGeometryModel3D BuildGrid(AnalysisResult r)

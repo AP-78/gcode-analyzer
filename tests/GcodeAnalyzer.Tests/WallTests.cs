@@ -65,9 +65,56 @@ public class WallTests
     }
 
     [Fact]
-    public void GapFillMakesItExpected()
+    public void GapFillAtTheWallMakesItExpected()
+    {
+        // Lückenfüllung zwischen Außen- und Innenwand, also an der Stelle der fehlenden Schleife
+        var w = Snippet(TwoLoops + "\n;TYPE:Gap infill\nG1 X0.5 Y4\nG1 X0.5 Y6 E0.1\n").Walls.Layers.Single();
+        Assert.Equal(WallStatus.ExpectedDeviation, w.Status);
+    }
+
+    [Fact]
+    public void GapFillFarFromTheWallStaysUnderrun()
     {
         var w = Snippet(TwoLoops + "\n;TYPE:Gap infill\nG1 X5 Y5\nG1 X6 Y5 E0.1\n").Walls.Layers.Single();
-        Assert.Equal(WallStatus.ExpectedDeviation, w.Status);
+        Assert.Equal(WallStatus.Underrun, w.Status);
+    }
+
+    [Fact]
+    public void OpenInnerWallPieceIsNoLoop()
+    {
+        var w = Snippet(TwoLoops.Replace("G1 X1 Y1 E1\nG1 X0 Y0\n", "G1 X0 Y0\n")).Walls.Layers.Single();
+        Assert.Equal(1, w.Loops);
+    }
+
+    [Fact]
+    public void ContourMissingALoopIsNotHiddenByAverage()
+    {
+        // Soll 2: Kontur A (0..10) hat ihre Innenwand, Kontur B (50..60) nicht.
+        var r = Snippet("""
+            ; wall_loops = 2
+            M83
+            ;LAYER_CHANGE
+            ;Z:0.2
+            G1 X1 Y1 Z0.2
+            ;TYPE:Inner wall
+            G1 X9 Y1 E1
+            G1 X9 Y9 E1
+            G1 X1 Y9 E1
+            G1 X1 Y1 E1
+            G1 X0 Y0
+            ;TYPE:Outer wall
+            G1 X10 Y0 E1
+            G1 X10 Y10 E1
+            G1 X0 Y10 E1
+            G1 X0 Y0 E1
+            G1 X50 Y0
+            G1 X60 Y0 E1
+            G1 X60 Y10 E1
+            G1 X50 Y10 E1
+            G1 X50 Y0 E1
+            """);
+        var w = r.Walls.Layers.Single();
+        Assert.Equal(1, w.Loops);
+        Assert.Equal(WallStatus.Underrun, w.Status);
     }
 }

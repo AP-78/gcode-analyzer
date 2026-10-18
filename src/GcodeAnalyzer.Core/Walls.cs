@@ -2,7 +2,7 @@ namespace GcodeAnalyzer.Core;
 
 public enum WallStatus { Ok, ExpectedDeviation, Underrun }
 
-/// <summary>Ist-Wandschleifen eines Layers, gemittelt über alle Konturen.</summary>
+/// <summary>Ist-Wandschleifen eines Layers: die Kontur mit den wenigsten Schleifen; Status ist der schlechteste aller Konturen.</summary>
 public sealed record LayerWalls(int Layer, double Loops, double Thickness, WallStatus Status);
 
 /// <summary>Soll-Wandstärke laut Slicer-Einstellungen und Ist-Werte je Layer (nur Layer mit Außenwand).</summary>
@@ -23,29 +23,82 @@ public sealed record WallAnalysis(int TargetLoops, double OuterWidth, double Inn
         var w = new WallAnalysis(target, Width("outer_wall_line_width", "external_perimeter_extrusion_width"),
             Width("inner_wall_line_width", "perimeter_extrusion_width"), []);
 
+        double nearContour = w.TargetThickness + lineWidth; // Lückenfüllung so nah an der Außenwand ersetzt Wandschleifen
         var result = new List<LayerWalls>();
         foreach (var l in layers)
         {
-            int outer = 0, inner = 0;
-            Segment? prev = null;
-            foreach (var s in l.Segments)
+            var chains = Chains(l.Segments);
+            var contours = chains.Where(c => c[0].Category == PathCategory.OuterWall).ToList();
+            if (contours.Count == 0) continue;
+            // Innenwand-Schleife gehört zur nächstgelegenen Außenwand; offene Innenwandstücke zählen nicht als Schleife
+            var loops = contours.Select(_ => 1).ToArray();
+            foreach (var inner in chains.Where(c => c[0].Category == PathCategory.InnerWall && IsClosed(c)))
             {
-                bool wall = s.Category is PathCategory.OuterWall or PathCategory.InnerWall;
-                // neue Wandschleife, wenn der Wandpfad nicht nahtlos am vorigen Wandpfad gleicher Art anschließt
-                if (wall && !(prev is { } p && p.Category == s.Category && p.To == s.From))
+                var samples = Samples(inner);
+                int best = 0;
+                double bestDist = double.MaxValue;
+                for (int k = 0; k < contours.Count; k++)
                 {
-                    if (s.Category == PathCategory.OuterWall) outer++; else inner++;
+                    double d = samples.Average(pt => Distance(pt, contours[k]));
+                    if (d < bestDist) { bestDist = d; best = k; }
                 }
-                prev = wall ? s : null;
+                loops[best]++;
             }
-            if (outer == 0) continue;
-            double loops = Math.Round((outer + inner) / (double)outer, 1);
-            bool expected = l.Segments.Any(s => s.Category == PathCategory.GapFill)
-                || (oneWallTop && l.Segments.Any(s => s.Category == PathCategory.TopSurface))
-                || (oneWallFirst && l.Index == 0);
-            var status = loops >= target - 0.05 ? WallStatus.Ok : expected ? WallStatus.ExpectedDeviation : WallStatus.Underrun;
-            result.Add(new LayerWalls(l.Index, loops, w.Thickness(loops), status));
+            var gaps = l.Segments.Where(s => s.Category == PathCategory.GapFill).Select(s => (s.From + s.To) / 2).ToList();
+            bool layerExpected = (oneWallTop && l.Segments.Any(s => s.Category == PathCategory.TopSurface)) || (oneWallFirst && l.Index == 0);
+
+            var status = WallStatus.Ok;
+            for (int k = 0; k < contours.Count; k++)
+            {
+                if (loops[k] >= target) continue;
+                bool expected = layerExpected || gaps.Any(g => Distance(g, contours[k]) <= nearContour);
+                var st = expected ? WallStatus.ExpectedDeviation : WallStatus.Underrun;
+                if (st > status) status = st;
+            }
+            int min = loops.Min();
+            result.Add(new LayerWalls(l.Index, min, w.Thickness(min), status));
         }
         return w with { Layers = result };
+    }
+
+    /// <summary>Zusammenhängende Wandpfade gleicher Art (Außen- bzw. Innenwand) eines Layers.</summary>
+    static List<List<Segment>> Chains(Segment[] segments)
+    {
+        var chains = new List<List<Segment>>();
+        List<Segment>? current = null;
+        foreach (var s in segments)
+        {
+            bool wall = s.Category is PathCategory.OuterWall or PathCategory.InnerWall;
+            if (!wall) { current = null; continue; }
+            if (current is null || current[^1].Category != s.Category || current[^1].To != s.From)
+                chains.Add(current = []);
+            current.Add(s);
+        }
+        return chains;
+    }
+
+    /// <summary>Geschlossen, wenn Anfang und Ende höchstens 1 mm auseinanderliegen (Naht).</summary>
+    static bool IsClosed(List<Segment> chain) => System.Numerics.Vector3.Distance(chain[0].From, chain[^1].To) <= 1f;
+
+    static List<System.Numerics.Vector3> Samples(List<Segment> chain)
+    {
+        int step = Math.Max(1, chain.Count / 8);
+        return chain.Where((_, i) => i % step == 0).Select(s => s.From).ToList();
+    }
+
+    /// <summary>Kleinster Abstand eines Punkts zu einem Wandpfad in der XY-Ebene.</summary>
+    static double Distance(System.Numerics.Vector3 p, List<Segment> chain)
+    {
+        double best = double.MaxValue;
+        foreach (var s in chain)
+        {
+            var a = new System.Numerics.Vector2(s.From.X, s.From.Y);
+            var ab = new System.Numerics.Vector2(s.To.X, s.To.Y) - a;
+            var q = new System.Numerics.Vector2(p.X, p.Y);
+            float len2 = ab.LengthSquared();
+            float t = len2 > 0 ? Math.Clamp(System.Numerics.Vector2.Dot(q - a, ab) / len2, 0, 1) : 0;
+            best = Math.Min(best, System.Numerics.Vector2.Distance(q, a + ab * t));
+        }
+        return best;
     }
 }

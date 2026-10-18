@@ -188,7 +188,8 @@ public static partial class GcodeAnalysis
                 }
                 case "G90": relXyz = false; relE = false; break;
                 case "G91": relXyz = true; relE = true; break;
-                case "G10": retracts++; break;
+                case "G10": if (!retracted) { retracts++; retracted = true; } break;
+                case "G11": retracted = false; break;
                 case "M82": relE = false; break;
                 case "M83": relE = true; break;
                 case "G92":

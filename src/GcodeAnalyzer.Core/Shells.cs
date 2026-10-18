@@ -11,7 +11,7 @@ public sealed record ShellSide(int SetLayers, double SetThickness, int Effective
 public sealed record ShellAnalysis(ShellSide Top, ShellSide Bottom, IReadOnlyList<ThinShellSpot> ThinSpots)
 {
     const float Cell = 1f;
-    const byte Solid = 1, SparseRegion = 2, TopMark = 4, BottomMark = 8;
+    const byte Solid = 1, SparseRegion = 2, TopMark = 4, BottomMark = 8, Edge = 16;
 
     internal static ShellAnalysis From(IReadOnlyList<Layer> layers, Func<string, double?> num, double? layerHeight)
     {
@@ -47,9 +47,9 @@ public sealed record ShellAnalysis(ShellSide Top, ShellSide Bottom, IReadOnlyLis
                 {
                     PathCategory.TopSurface => Solid | TopMark,
                     PathCategory.BottomSurface => Solid | BottomMark,
-                    PathCategory.SparseInfill => 0,
-                    PathCategory.Support or PathCategory.SupportInterface or PathCategory.Skirt or PathCategory.Other => 0,
-                    _ => Solid, // Wände, Massiv-Infill, Brücke, Lückenfüllung
+                    PathCategory.SolidInfill or PathCategory.Bridge => Solid, // massive Füllung laut CONTEXT.md
+                    PathCategory.OuterWall or PathCategory.InnerWall or PathCategory.GapFill => Edge,
+                    _ => 0,
                 };
                 Rasterize(s, x0, y0, nx, ny, c => { if (s.Category == PathCategory.SparseInfill) sparse.Add(c); else g[c] |= mark; });
             }
@@ -77,8 +77,9 @@ public sealed record ShellAnalysis(ShellSide Top, ShellSide Bottom, IReadOnlyLis
                 if ((grid[i][c] & mark) == 0) continue;
                 int n = 0, j = i;
                 while (j >= 0 && j < layers.Count && (grid[j][c] & Solid) != 0) { n++; j += top ? -1 : 1; }
-                // nur Stellen, unter (bzw. über) denen Sparse-Infill liegt; durchgehend massive Bereiche haben keine Schale
-                if (j < 0 || j >= layers.Count || (grid[j][c] & SparseRegion) == 0) continue;
+                // nur Stellen, unter (bzw. über) denen Sparse-Infill liegt; durchgehend massive Bereiche haben keine Schale,
+                // und wo eine Wand oder Lückenfüllung folgt, ist es der Rand des Teils
+                if (j < 0 || j >= layers.Count || (grid[j][c] & SparseRegion) == 0 || (grid[j][c] & (Edge | Solid)) != 0) continue;
                 counts.Add(n);
                 if (n < eff)
                 {

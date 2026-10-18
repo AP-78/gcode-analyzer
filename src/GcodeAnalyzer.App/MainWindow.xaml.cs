@@ -202,7 +202,6 @@ public partial class MainWindow : Window
     {
         SceneRoot.Children.Clear();
         _scene = new PathScene(r) { Mode = (ColorMode)Math.Max(0, ColorModeBox.SelectedIndex) };
-        if (_scene.Mode != ColorMode.Category) _scene.Rebuild();
         SceneRoot.Children.Add(_scene.Root);
         _scene.Grid.Visibility = GridToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         OnThinShellsClick(this, null!);
@@ -257,7 +256,6 @@ public partial class MainWindow : Window
         if (_scene == null || sender is not FrameworkElement { DataContext: LegendItem item }
             || item.IsVisible == _scene.Visible.Contains(item.Category)) return;
         if (item.IsVisible) _scene.Visible.Add(item.Category); else _scene.Visible.Remove(item.Category);
-        _scene.Rebuild();
         _scene.ShowUpTo((int)LayerSlider.Value - 1);
     }
 
@@ -265,8 +263,7 @@ public partial class MainWindow : Window
     {
         if (_scene == null) return;
         _scene.MarkWalls = MarkWallsToggle.IsChecked == true;
-        _scene.Rebuild();
-        _scene.ShowUpTo((int)LayerSlider.Value - 1);
+        _scene.Recolor();
     }
 
     static Brush? StatusBrush(WallStatus s) => s switch
@@ -280,8 +277,7 @@ public partial class MainWindow : Window
     {
         if (_scene == null) return;
         _scene.Mode = (ColorMode)ColorModeBox.SelectedIndex;
-        _scene.Rebuild();
-        _scene.ShowUpTo((int)LayerSlider.Value - 1);
+        _scene.Recolor();
         UpdateHeatLegend();
     }
 
