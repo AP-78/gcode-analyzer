@@ -1,6 +1,7 @@
 ﻿<Window x:Class="GcodeAnalyzer.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:hx="http://helix-toolkit.org/wpf/SharpDX"
         Title="G-Code-Analyzer" Height="800" Width="1200" MinWidth="700" MinHeight="450"
         AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver">
     <Grid>
@@ -19,34 +20,90 @@
             <TextBlock x:Name="Status" Margin="12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
 
-        <Border Grid.Row="1" Margin="8,0,4,8" BorderBrush="#DDD" BorderThickness="1">
-            <Grid>
-                <TextBlock x:Name="DropHint" HorizontalAlignment="Center" VerticalAlignment="Center"
-                           FontSize="16" Foreground="Gray">G-Code-Datei hierher ziehen oder „Datei öffnen“ wählen</TextBlock>
-                <Image x:Name="Preview" Stretch="Uniform" Margin="24" MaxWidth="400" MaxHeight="400"/>
-            </Grid>
-        </Border>
+        <Grid Grid.Row="1" Margin="8,0,4,8" Background="#303030">
+            <Grid.RowDefinitions>
+                <RowDefinition/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <hx:Viewport3DX x:Name="Viewport" BackgroundColor="#303030" ShowViewCube="True" ShowCoordinateSystem="False"
+                            ModelUpDirection="0,0,1" EnableSwapChainRendering="False" FXAALevel="Low"
+                            ShowFrameRate="False" TextBrush="White">
+                <hx:Viewport3DX.Camera>
+                    <hx:PerspectiveCamera Position="110,-150,180" LookDirection="0,260,-180" UpDirection="0,0,1"
+                                          NearPlaneDistance="1" FarPlaneDistance="5000"/>
+                </hx:Viewport3DX.Camera>
+                <hx:Viewport3DX.InputBindings>
+                    <MouseBinding Command="hx:ViewportCommands.Rotate" Gesture="LeftClick"/>
+                    <MouseBinding Command="hx:ViewportCommands.Pan" Gesture="RightClick"/>
+                    <MouseBinding Command="hx:ViewportCommands.Pan" Gesture="MiddleClick"/>
+                    <MouseBinding Command="hx:ViewportCommands.ZoomExtents" Gesture="LeftDoubleClick"/>
+                </hx:Viewport3DX.InputBindings>
+                <hx:AmbientLight3D Color="White"/>
+                <hx:GroupModel3D x:Name="SceneRoot"/>
+            </hx:Viewport3DX>
+
+            <TextBlock x:Name="DropHint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="16" Foreground="#AAA">G-Code-Datei hierher ziehen oder „Datei öffnen“ wählen</TextBlock>
+
+            <Border x:Name="LegendPanel" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
+                    Background="#C0202020" CornerRadius="4" Padding="8,6">
+                <StackPanel>
+                    <ItemsControl x:Name="Legend">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsVisible}" Margin="0,2" Checked="OnLegendClick" Unchecked="OnLegendClick"
+                                          AutomationProperties.Name="{Binding Name}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Rectangle Width="12" Height="12" Fill="{Binding Brush}" Margin="0,0,6,0"/>
+                                        <TextBlock Text="{Binding Name}" Foreground="White"/>
+                                    </StackPanel>
+                                </CheckBox>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Separator Margin="0,4"/>
+                    <CheckBox x:Name="GridToggle" IsChecked="True" Checked="OnGridClick" Unchecked="OnGridClick">
+                        <TextBlock Text="Raster" Foreground="White"/>
+                    </CheckBox>
+                </StackPanel>
+            </Border>
+
+            <DockPanel x:Name="LayerPanel" Grid.Row="1" Margin="10,6" Visibility="Collapsed">
+                <TextBlock DockPanel.Dock="Left" Foreground="White" VerticalAlignment="Center" Width="110">
+                    <Run Text="Layer "/><Run x:Name="LayerText"/>
+                </TextBlock>
+                <Button DockPanel.Dock="Right" Padding="10,2" Margin="4,0,0,0" Click="OnAllLayers">Alle</Button>
+                <Button DockPanel.Dock="Right" Width="28" Margin="4,0,0,0" Click="OnLayerPlus">+</Button>
+                <Button DockPanel.Dock="Right" Width="28" Margin="8,0,0,0" Click="OnLayerMinus">−</Button>
+                <Slider x:Name="LayerSlider" Minimum="1" IsSnapToTickEnabled="True" TickFrequency="1"
+                        SmallChange="1" LargeChange="10" VerticalAlignment="Center" ValueChanged="OnLayerChanged"/>
+            </DockPanel>
+        </Grid>
 
         <ScrollViewer Grid.Row="1" Grid.Column="1" Margin="4,0,8,8" VerticalScrollBarVisibility="Auto">
-            <ItemsControl x:Name="Sections">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Expander Header="{Binding Title}" IsExpanded="True" Margin="0,0,0,8" FontWeight="SemiBold">
-                            <ItemsControl ItemsSource="{Binding Rows}" Margin="8,4,0,0" FontWeight="Normal">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <DockPanel Margin="0,2">
-                                            <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190"
-                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0"/>
-                                            <TextBlock Text="{Binding Label}" Foreground="#555"/>
-                                        </DockPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </Expander>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <StackPanel>
+                <Image x:Name="Preview" Stretch="Uniform" MaxHeight="180" Margin="0,0,0,8"/>
+                <ItemsControl x:Name="Sections">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Expander Header="{Binding Title}" IsExpanded="True" Margin="0,0,0,8" FontWeight="SemiBold">
+                                <ItemsControl ItemsSource="{Binding Rows}" Margin="8,4,0,0" FontWeight="Normal">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel Margin="0,2">
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0"/>
+                                                <TextBlock Text="{Binding Label}" Foreground="#555"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Expander>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
         </ScrollViewer>
     </Grid>
 </Window>

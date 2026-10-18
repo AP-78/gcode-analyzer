@@ -4,6 +4,10 @@
     <ProjectReference Include="..\GcodeAnalyzer.Core\GcodeAnalyzer.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="HelixToolkit.Wpf.SharpDX" Version="3.1.2" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -7,22 +8,38 @@ namespace GcodeAnalyzer.Core;
 public static partial class GcodeAnalysis
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+    const float ArcStepMm = 0.5f;
 
     public static AnalysisResult Analyze(Stream stream, string fileName,
         IProgress<double>? progress = null, CancellationToken ct = default)
     {
         var settings = new Dictionary<string, string>();
         string? slicer = null, version = null;
-        int lines = 0, layerChanges = 0;
+        int lines = 0;
 
         StringBuilder? thumb = null;
         string? bestThumb = null;
         int thumbArea = 0, bestArea = -1;
 
+        var layers = new List<Layer>();
+        var segs = new List<Segment>();          // Segmente des laufenden Layers (vor dem ersten Layer-Wechsel: Startcode)
+        float layerZ = float.NaN, layerH = 0;
+        var category = PathCategory.Other;
+
         bool relE = false, relXyz = false;
-        double x = 0, y = 0, z = 0, e = 0, f = 0, maxF = 0;
-        double minX = double.MaxValue, maxX = double.MinValue, minY = double.MaxValue, maxY = double.MinValue, maxZ = 0;
+        var pos = Vector3.Zero;
+        bool knownXY = false; // bis zur ersten Bewegung mit X und Y ist die Startposition unbekannt
+        double e = 0, f = 0, maxF = 0;
+        float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue, maxZ = 0;
         double? nozzle = null, bed = null;
+        var pts = new List<Vector3>();
+
+        void FlushLayer()
+        {
+            if (float.IsNaN(layerZ)) return; // Startcode wandert in den ersten Layer
+            layers.Add(new Layer(layers.Count, layerZ, layerH, segs.ToArray()));
+            segs.Clear();
+        }
 
         long length = stream.CanSeek ? stream.Length : 0;
         using var reader = new StreamReader(stream, Encoding.UTF8, false, 1 << 16);
@@ -48,7 +65,15 @@ public static partial class GcodeAnalysis
                     else thumb.Append(line.AsSpan(1).Trim());
                     continue;
                 }
-                if (line.StartsWith(";LAYER_CHANGE", StringComparison.Ordinal)) { layerChanges++; continue; }
+                if (line.StartsWith(";TYPE:", StringComparison.Ordinal)) { category = PathCategories.FromMarker(line[6..]); continue; }
+                if (line.StartsWith(";LAYER_CHANGE", StringComparison.Ordinal))
+                {
+                    FlushLayer();
+                    layerZ = pos.Z; layerH = 0;
+                    continue;
+                }
+                if (line.StartsWith(";Z:", StringComparison.Ordinal)) { if (float.TryParse(line.AsSpan(3), NumberStyles.Float, Inv, out var lz)) layerZ = lz; continue; }
+                if (line.StartsWith(";HEIGHT:", StringComparison.Ordinal)) { if (float.TryParse(line.AsSpan(8), NumberStyles.Float, Inv, out var lh)) layerH = lh; continue; }
                 if (line.StartsWith("; thumbnail begin ", StringComparison.Ordinal))
                 {
                     var m = ThumbBegin().Match(line);
@@ -79,7 +104,8 @@ public static partial class GcodeAnalysis
             {
                 case "G0" or "G1" or "G2" or "G3":
                 {
-                    double? nx = null, ny = null, nz = null, ne = null, nf = null;
+                    float? nx = null, ny = null, nz = null, ci = null, cj = null;
+                    double? ne = null;
                     foreach (var r in args.Split(' '))
                     {
                         var t = args[r];
@@ -87,27 +113,50 @@ public static partial class GcodeAnalysis
                         if (!double.TryParse(t[1..], NumberStyles.Float, Inv, out var v)) continue;
                         switch (t[0])
                         {
-                            case 'X': nx = v; break;
-                            case 'Y': ny = v; break;
-                            case 'Z': nz = v; break;
+                            case 'X': nx = (float)v; break;
+                            case 'Y': ny = (float)v; break;
+                            case 'Z': nz = (float)v; break;
                             case 'E': ne = v; break;
-                            case 'F': nf = v; break;
+                            case 'F': f = v; break;
+                            case 'I': ci = (float)v; break;
+                            case 'J': cj = (float)v; break;
                         }
                     }
-                    if (nf is { } fv) f = fv;
-                    if (nx is { } xv) x = relXyz ? x + xv : xv;
-                    if (ny is { } yv) y = relXyz ? y + yv : yv;
-                    if (nz is { } zv) z = relXyz ? z + zv : zv;
+                    var to = pos;
+                    if (nx is { } xv) to.X = relXyz ? to.X + xv : xv;
+                    if (ny is { } yv) to.Y = relXyz ? to.Y + yv : yv;
+                    if (nz is { } zv) to.Z = relXyz ? to.Z + zv : zv;
                     double de = 0;
                     if (ne is { } ev) { de = relE ? ev : ev - e; e = relE ? e + ev : ev; }
-                    // ponytail: Bögen (G2/G3) zählen nur mit ihrem Endpunkt; reicht für die Ausdehnung, exakte Bögen kommen mit der 3D-Ansicht
-                    if (de > 0 && (nx != null || ny != null))
+                    if (to == pos) break;
+                    if (!knownXY)
                     {
-                        minX = Math.Min(minX, x); maxX = Math.Max(maxX, x);
-                        minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
-                        maxZ = Math.Max(maxZ, z);
-                        maxF = Math.Max(maxF, f);
+                        pos = to;
+                        knownXY = nx != null && ny != null;
+                        if (!knownXY || de <= 0) break;
                     }
+
+                    bool extruding = de > 0 && (nx != null || ny != null);
+                    var cat = extruding ? category : PathCategory.Travel;
+                    pts.Clear();
+                    if (cmd is "G2" or "G3" && (ci != null || cj != null))
+                        Arc(pos, to, new Vector2(ci ?? 0, cj ?? 0), cmd is "G2", pts);
+                    else pts.Add(to);
+
+                    var from = pos;
+                    foreach (var p in pts)
+                    {
+                        segs.Add(new Segment(from, p, cat));
+                        if (extruding)
+                        {
+                            minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X);
+                            minY = Math.Min(minY, p.Y); maxY = Math.Max(maxY, p.Y);
+                            maxZ = Math.Max(maxZ, p.Z);
+                        }
+                        from = p;
+                    }
+                    if (extruding) maxF = Math.Max(maxF, f);
+                    pos = to;
                     break;
                 }
                 case "G90": relXyz = false; relE = false; break;
@@ -122,6 +171,8 @@ public static partial class GcodeAnalysis
                 case "M140" or "M190": bed ??= SValue(args); break;
             }
         }
+        FlushLayer();
+        if (layers.Count == 0 && segs.Count > 0) layers.Add(new Layer(0, pos.Z, 0, segs.ToArray()));
         progress?.Report(1.0);
 
         bool any = maxX >= minX;
@@ -134,7 +185,7 @@ public static partial class GcodeAnalysis
             SlicerVersion = version,
             Settings = settings,
             Thumbnail = bestThumb == null ? null : TryBase64(bestThumb),
-            LayerCount = layerChanges > 0 ? layerChanges : (int)(Num(settings, "total layer number") ?? 0),
+            Layers = layers,
             EstimatedTime = settings.TryGetValue("estimated printing time (normal mode)", out var et) ? ParseDuration(et) : null,
             FilamentLengthMm = Num(settings, "filament used [mm]"),
             FilamentWeightG = Num(settings, "total filament used [g]") ?? Num(settings, "filament used [g]"),
@@ -148,7 +199,38 @@ public static partial class GcodeAnalysis
             BedTemp = bed,
             PrinterModel = settings.GetValueOrDefault("printer_model"),
             FilamentType = settings.GetValueOrDefault("filament_type"),
+            Bed = ParseBed(settings.GetValueOrDefault("printable_area") ?? settings.GetValueOrDefault("bed_shape")),
         };
+    }
+
+    /// <summary>Bogen um Mittelpunkt start+ij in Stücke von ca. 0,5 mm zerlegen; Z wird linear mitgeführt.</summary>
+    static void Arc(Vector3 from, Vector3 to, Vector2 ij, bool clockwise, List<Vector3> pts)
+    {
+        var c = new Vector2(from.X, from.Y) + ij;
+        float r = ij.Length();
+        float a0 = MathF.Atan2(from.Y - c.Y, from.X - c.X);
+        float a1 = MathF.Atan2(to.Y - c.Y, to.X - c.X);
+        float sweep = a1 - a0;
+        if (clockwise) { if (sweep >= 0) sweep -= 2 * MathF.PI; }
+        else if (sweep <= 0) sweep += 2 * MathF.PI;
+        int n = Math.Clamp((int)MathF.Ceiling(MathF.Abs(sweep) * r / ArcStepMm), 1, 720);
+        for (int i = 1; i < n; i++)
+        {
+            float t = (float)i / n, a = a0 + sweep * t;
+            pts.Add(new Vector3(c.X + r * MathF.Cos(a), c.Y + r * MathF.Sin(a), from.Z + (to.Z - from.Z) * t));
+        }
+        pts.Add(to);
+    }
+
+    /// <summary>"0x0,220x0,220x220,0x220" → Ecken min/max.</summary>
+    static (float, float, float, float)? ParseBed(string? s)
+    {
+        if (s == null) return null;
+        var c = s.Split(',').Select(p => p.Split('x'))
+            .Where(p => p.Length == 2)
+            .Select(p => (float.Parse(p[0], Inv), float.Parse(p[1], Inv))).ToList();
+        if (c.Count < 3) return null;
+        return (c.Min(p => p.Item1), c.Min(p => p.Item2), c.Max(p => p.Item1), c.Max(p => p.Item2));
     }
 
     static double? SValue(ReadOnlySpan<char> args)

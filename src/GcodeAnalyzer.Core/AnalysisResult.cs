@@ -15,7 +15,8 @@ public sealed record AnalysisResult
     /// <summary>Größtes eingebettetes PNG-Vorschaubild.</summary>
     public byte[]? Thumbnail { get; init; }
 
-    public int LayerCount { get; init; }
+    public required IReadOnlyList<Layer> Layers { get; init; }
+    public int LayerCount => Layers.Count;
     public TimeSpan? EstimatedTime { get; init; }
     public double? FilamentLengthMm { get; init; }
     public double? FilamentWeightG { get; init; }
@@ -33,4 +34,7 @@ public sealed record AnalysisResult
     public double? BedTemp { get; init; }
     public string? PrinterModel { get; init; }
     public string? FilamentType { get; init; }
+
+    /// <summary>Druckbett aus <c>printable_area</c> (Ecken min/max), sonst null.</summary>
+    public (float MinX, float MinY, float MaxX, float MaxY)? Bed { get; init; }
 }

@@ -1,22 +1,27 @@
 ﻿using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using GcodeAnalyzer.Core;
+using HelixToolkit.Wpf.SharpDX;
 using Microsoft.Win32;
 
 namespace GcodeAnalyzer.App;
 
 public record Row(string Label, string Value);
 public record Section(string Title, IReadOnlyList<Row> Rows);
+public record LegendItem(PathCategory Category, string Name, Brush Brush) { public bool IsVisible { get; set; } }
 
 public partial class MainWindow : Window
 {
     static readonly CultureInfo De = CultureInfo.GetCultureInfo("de-DE");
+    PathScene? _scene;
 
     public MainWindow()
     {
         InitializeComponent();
+        Viewport.EffectsManager = new HelixToolkit.SharpDX.DefaultEffectsManager();
         // "Öffnen mit" bzw. Start mit Dateipfad als Argument
         if (Environment.GetCommandLineArgs() is [_, var file, ..]) Loaded += (_, _) => _ = Load(file);
     }
@@ -66,10 +71,8 @@ public partial class MainWindow : Window
     void Show(AnalysisResult r)
     {
         Title = $"{r.FileName} – G-Code-Analyzer";
-        var thumb = ToImage(r.Thumbnail);
-        Preview.Source = thumb;
-        DropHint.Visibility = thumb == null ? Visibility.Visible : Visibility.Collapsed;
-        if (thumb == null) DropHint.Text = "Kein Vorschaubild in der Datei";
+        Preview.Source = ToImage(r.Thumbnail);
+        ShowScene(r);
 
         Sections.ItemsSource = new[]
         {
@@ -100,6 +103,66 @@ public partial class MainWindow : Window
                 new("Slicer", r.SlicerName is null ? "unbekannt" : $"{r.SlicerName} {r.SlicerVersion}"),
             ]),
         };
+    }
+
+    void ShowScene(AnalysisResult r)
+    {
+        SceneRoot.Children.Clear();
+        _scene = new PathScene(r);
+        SceneRoot.Children.Add(_scene.Root);
+        _scene.Grid.Visibility = GridToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        Legend.ItemsSource = _scene.Present
+            .Select(c => new LegendItem(c, PathScene.Styles[c].Name, new SolidColorBrush(PathScene.Styles[c].Color)) { IsVisible = _scene.Visible.Contains(c) })
+            .ToList();
+        bool any = r.LayerCount > 0;
+        DropHint.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        if (!any) DropHint.Text = "Keine Druckpfade in der Datei";
+        LegendPanel.Visibility = LayerPanel.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        LayerSlider.Maximum = Math.Max(1, r.LayerCount);
+        LayerSlider.Value = LayerSlider.Maximum;
+        OnLayerChanged(this, null!);
+        if (any) FocusCamera(r);
+    }
+
+    /// <summary>Kamera schräg von vorne auf die Extrusionen richten.</summary>
+    void FocusCamera(AnalysisResult r)
+    {
+        var pts = r.Layers.SelectMany(l => l.Segments).Where(s => s.Category != PathCategory.Travel).Select(s => s.To).ToList();
+        if (pts.Count == 0) return;
+        var min = pts.Aggregate(System.Numerics.Vector3.Min);
+        var max = pts.Aggregate(System.Numerics.Vector3.Max);
+        var c = (min + max) / 2;
+        float d = Math.Max(Math.Max(max.X - min.X, max.Y - min.Y), max.Z - min.Z) * 1.6f + 10;
+        var cam = (PerspectiveCamera)Viewport.Camera;
+        cam.Position = new System.Windows.Media.Media3D.Point3D(c.X, c.Y - d, c.Z + d * 0.8);
+        cam.LookDirection = new System.Windows.Media.Media3D.Vector3D(0, d, -d * 0.8);
+        cam.UpDirection = new System.Windows.Media.Media3D.Vector3D(0, 0, 1);
+    }
+
+    void OnLayerChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_scene == null) return;
+        int n = (int)LayerSlider.Value;
+        _scene.ShowUpTo(n - 1);
+        LayerText.Text = $"{n} / {(int)LayerSlider.Maximum}";
+    }
+
+    void OnLayerMinus(object sender, RoutedEventArgs e) => LayerSlider.Value--;
+    void OnLayerPlus(object sender, RoutedEventArgs e) => LayerSlider.Value++;
+    void OnAllLayers(object sender, RoutedEventArgs e) => LayerSlider.Value = LayerSlider.Maximum;
+
+    void OnLegendClick(object sender, RoutedEventArgs e)
+    {
+        if (_scene == null || sender is not FrameworkElement { DataContext: LegendItem item }
+            || item.IsVisible == _scene.Visible.Contains(item.Category)) return;
+        if (item.IsVisible) _scene.Visible.Add(item.Category); else _scene.Visible.Remove(item.Category);
+        _scene.Rebuild();
+        _scene.ShowUpTo((int)LayerSlider.Value - 1);
+    }
+
+    void OnGridClick(object sender, RoutedEventArgs e)
+    {
+        if (_scene != null) _scene.Grid.Visibility = GridToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     static string N(double v, int decimals) => v.ToString("N" + decimals, De);
