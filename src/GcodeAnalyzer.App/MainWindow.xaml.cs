@@ -74,6 +74,11 @@ public partial class MainWindow : Window
         Preview.Source = ToImage(r.Thumbnail);
         ShowScene(r);
 
+        var hints = new List<Row>();
+        if (r.ShortLayers.Count > 0)
+            hints.Add(new($"{r.ShortLayers.Count} Layer unter {N(r.MinLayerTime, 0)} s",
+                string.Join(", ", r.ShortLayers.Take(8).Select(i => i + 1)) + (r.ShortLayers.Count > 8 ? " …" : "")));
+
         Sections.ItemsSource = new[]
         {
             new Section("Druckstatistik", [
@@ -84,6 +89,9 @@ public partial class MainWindow : Window
                 new("Layer", N(r.LayerCount, 0)),
                 new("Zeilen", N(r.LineCount, 0)),
             ]),
+            new Section("Anteile (Filament | Zeit)", r.Shares.OrderByDescending(kv => kv.Value.TimePercent)
+                .Select(kv => new Row(PathScene.Styles[kv.Key].Name, $"{N(kv.Value.FilamentPercent, 1)} % | {N(kv.Value.TimePercent, 1)} %"))
+                .ToList()),
             new Section("Abmessungen", [
                 new("Breite (X)", $"{N(r.Width, 1)} mm"),
                 new("Tiefe (Y)", $"{N(r.Depth, 1)} mm"),
@@ -102,7 +110,7 @@ public partial class MainWindow : Window
                 new("Größe", $"{N(r.FileSize / 1024.0 / 1024.0, 1)} MB"),
                 new("Slicer", r.SlicerName is null ? "unbekannt" : $"{r.SlicerName} {r.SlicerVersion}"),
             ]),
-        };
+        }.Prepend(new Section("Hinweise", hints)).Where(sec => sec.Rows.Count > 0).ToList();
     }
 
     void ShowScene(AnalysisResult r)
@@ -117,7 +125,8 @@ public partial class MainWindow : Window
         bool any = r.LayerCount > 0;
         DropHint.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
         if (!any) DropHint.Text = "Keine Druckpfade in der Datei";
-        LegendPanel.Visibility = LayerPanel.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        LegendPanel.Visibility = LayerPanel.Visibility = ChartPanel.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        Chart.SetData(r.Layers, r.MinLayerTime);
         LayerSlider.Maximum = Math.Max(1, r.LayerCount);
         LayerSlider.Value = LayerSlider.Maximum;
         OnLayerChanged(this, null!);
@@ -144,8 +153,11 @@ public partial class MainWindow : Window
         if (_scene == null) return;
         int n = (int)LayerSlider.Value;
         _scene.ShowUpTo(n - 1);
+        Chart.Current = n - 1;
         LayerText.Text = $"{n} / {(int)LayerSlider.Maximum}";
     }
+
+    void OnChartLayerClicked(int layer) => LayerSlider.Value = layer + 1;
 
     void OnLayerMinus(object sender, RoutedEventArgs e) => LayerSlider.Value--;
     void OnLayerPlus(object sender, RoutedEventArgs e) => LayerSlider.Value++;

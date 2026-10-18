@@ -33,12 +33,16 @@ public static partial class GcodeAnalysis
         float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue, maxZ = 0;
         double? nozzle = null, bed = null;
         var pts = new List<Vector3>();
+        double layerTime = 0;                    // ungeskaliert, ohne Beschleunigung
+        var catTime = new double[Enum.GetValues<PathCategory>().Length];
+        var catE = new double[catTime.Length];
 
         void FlushLayer()
         {
             if (float.IsNaN(layerZ)) return; // Startcode wandert in den ersten Layer
-            layers.Add(new Layer(layers.Count, layerZ, layerH, segs.ToArray()));
+            layers.Add(new Layer(layers.Count, layerZ, layerH, segs.ToArray(), layerTime));
             segs.Clear();
+            layerTime = 0;
         }
 
         long length = stream.CanSeek ? stream.Length : 0;
@@ -128,7 +132,13 @@ public static partial class GcodeAnalysis
                     if (nz is { } zv) to.Z = relXyz ? to.Z + zv : zv;
                     double de = 0;
                     if (ne is { } ev) { de = relE ? ev : ev - e; e = relE ? e + ev : ev; }
-                    if (to == pos) break;
+                    float speed = (float)(f / 60);
+                    if (to == pos)
+                    {
+                        // Retract/Unretract: kostet Zeit, zählt zum Fahrweg
+                        if (de != 0 && speed > 0) { double t = Math.Abs(de) / speed; layerTime += t; catTime[(int)PathCategory.Travel] += t; }
+                        break;
+                    }
                     if (!knownXY)
                     {
                         pos = to;
@@ -144,9 +154,15 @@ public static partial class GcodeAnalysis
                     else pts.Add(to);
 
                     var from = pos;
+                    float total = 0;
+                    var prev = pos;
+                    foreach (var p in pts) { total += Vector3.Distance(prev, p); prev = p; }
+                    if (speed > 0) { double t = total / speed; layerTime += t; catTime[(int)cat] += t; }
+                    if (extruding) catE[(int)cat] += de;
                     foreach (var p in pts)
                     {
-                        segs.Add(new Segment(from, p, cat));
+                        float part = total > 0 ? Vector3.Distance(from, p) / total : 1;
+                        segs.Add(new Segment(from, p, cat, speed, extruding ? (float)(de * part) : 0));
                         if (extruding)
                         {
                             minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X);
@@ -172,8 +188,23 @@ public static partial class GcodeAnalysis
             }
         }
         FlushLayer();
-        if (layers.Count == 0 && segs.Count > 0) layers.Add(new Layer(0, pos.Z, 0, segs.ToArray()));
+        if (layers.Count == 0 && segs.Count > 0) layers.Add(new Layer(0, pos.Z, 0, segs.ToArray(), layerTime));
         progress?.Report(1.0);
+
+        // ponytail: Zeit ohne Beschleunigung, linear auf die Slicer-Gesamtzeit skaliert; echte Planer-Simulation, falls Verhältnisse zwischen Layern nicht reichen
+        var estimated = settings.TryGetValue("estimated printing time (normal mode)", out var et) ? ParseDuration(et) : null;
+        double raw = layers.Sum(l => l.Time);
+        double scale = estimated is { } est && raw > 0 ? est.TotalSeconds / raw : 1;
+        for (int i = 0; i < layers.Count; i++) layers[i] = layers[i] with { Time = layers[i].Time * scale };
+
+        double sumT = catTime.Sum() * scale, sumE = catE.Sum();
+        var shares = new Dictionary<PathCategory, CategoryShare>();
+        for (int c = 0; c < catTime.Length; c++)
+            if (catTime[c] > 0 || catE[c] > 0)
+                shares[(PathCategory)c] = new CategoryShare(catE[c], catTime[c] * scale,
+                    sumE > 0 ? catE[c] / sumE * 100 : 0, sumT > 0 ? catTime[c] * scale / sumT * 100 : 0);
+
+        double minLayerTime = Num(settings, "slow_down_layer_time") ?? Num(settings, "slowdown_below_layer_time") ?? 8;
 
         bool any = maxX >= minX;
         return new AnalysisResult
@@ -186,7 +217,10 @@ public static partial class GcodeAnalysis
             Settings = settings,
             Thumbnail = bestThumb == null ? null : TryBase64(bestThumb),
             Layers = layers,
-            EstimatedTime = settings.TryGetValue("estimated printing time (normal mode)", out var et) ? ParseDuration(et) : null,
+            EstimatedTime = estimated,
+            Shares = shares,
+            MinLayerTime = minLayerTime,
+            ShortLayers = layers.Where(l => l.Time < minLayerTime).Select(l => l.Index).ToList(),
             FilamentLengthMm = Num(settings, "filament used [mm]"),
             FilamentWeightG = Num(settings, "total filament used [g]") ?? Num(settings, "filament used [g]"),
             FilamentCost = Num(settings, "total filament cost"),

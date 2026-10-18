@@ -9,9 +9,17 @@ public enum PathCategory : byte
     GapFill, Bridge, Support, SupportInterface, Skirt, Other, Travel,
 }
 
-public readonly record struct Segment(Vector3 From, Vector3 To, PathCategory Category);
+/// <summary>Gerade Bewegung; Speed in mm/s, Extrusion in mm Filament.</summary>
+public readonly record struct Segment(Vector3 From, Vector3 To, PathCategory Category, float Speed, float Extrusion)
+{
+    public float Length => Vector3.Distance(From, To);
+}
 
-public sealed record Layer(int Index, float Z, float Height, Segment[] Segments);
+/// <summary>Time: Druckzeit des Layers in Sekunden, auf die Slicer-Gesamtzeit skaliert.</summary>
+public sealed record Layer(int Index, float Z, float Height, Segment[] Segments, double Time = 0);
+
+/// <summary>Anteil einer Pfad-Kategorie an Filament und Druckzeit.</summary>
+public sealed record CategoryShare(double FilamentMm, double Seconds, double FilamentPercent, double TimePercent);
 
 public static class PathCategories
 {

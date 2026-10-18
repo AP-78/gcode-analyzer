@@ -35,6 +35,13 @@ public sealed record AnalysisResult
     public string? PrinterModel { get; init; }
     public string? FilamentType { get; init; }
 
+    /// <summary>Filament- und Zeitanteil je Pfad-Kategorie (nur vorkommende).</summary>
+    public required IReadOnlyDictionary<PathCategory, CategoryShare> Shares { get; init; }
+
+    /// <summary>Mindest-Layerzeit in Sekunden (aus der Datei, sonst 8 s) und die Layer-Indizes darunter.</summary>
+    public double MinLayerTime { get; init; }
+    public required IReadOnlyList<int> ShortLayers { get; init; }
+
     /// <summary>Druckbett aus <c>printable_area</c> (Ecken min/max), sonst null.</summary>
     public (float MinX, float MinY, float MaxX, float MaxY)? Bed { get; init; }
 }
