@@ -23,6 +23,7 @@ public class ShellTests
         var t = Ref.Shells.Top;
         Assert.Equal((2, 0.8, 4), (t.SetLayers, t.SetThickness, t.Effective));
         Assert.Equal(4, t.MeasuredMin);
+        Assert.Equal(0.96, t.EffectiveThickness, 3); // 4 × 0,24 mm
         Assert.Equal(0, t.ThinSpots);
     }
 
@@ -32,6 +33,7 @@ public class ShellTests
         var b = Ref.Shells.Bottom;
         Assert.Equal((2, 2), (b.SetLayers, b.Effective));
         Assert.Equal(2, b.MeasuredMin);
+        Assert.Equal(0.44, b.EffectiveThickness, 3); // erster Layer 0,2 + 0,24 mm
         Assert.Equal(0, b.ThinSpots);
     }
 

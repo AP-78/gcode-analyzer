@@ -6,7 +6,11 @@ namespace GcodeAnalyzer.Core;
 public sealed record ThinShellSpot(int Layer, float X, float Y, int Measured, bool Top);
 
 /// <summary>Eingestellte, effektive und gemessene Schalenschichten einer Seite (oben/unten).</summary>
-public sealed record ShellSide(int SetLayers, double SetThickness, int Effective, int? MeasuredMin, double? MeasuredAvg, int ThinSpots);
+public sealed record ShellSide(int SetLayers, double SetThickness, int Effective, int? MeasuredMin, double? MeasuredAvg, int ThinSpots)
+{
+    /// <summary>Dicke der effektiven Schalenschichten in mm (unten mit der Höhe des ersten Layers).</summary>
+    public double EffectiveThickness { get; init; }
+}
 
 public sealed record ShellAnalysis(ShellSide Top, ShellSide Bottom, IReadOnlyList<ThinShellSpot> ThinSpots)
 {
@@ -21,11 +25,14 @@ public sealed record ShellAnalysis(ShellSide Top, ShellSide Bottom, IReadOnlyLis
         double botThick = num("bottom_shell_thickness") ?? num("bottom_solid_min_thickness") ?? 0;
         int Effective(int n, double t) => layerHeight is > 0 && t > 0 ? Math.Max(n, (int)Math.Ceiling(t / layerHeight.Value - 1e-6)) : n;
         int topEff = Effective(topSet, topThick), botEff = Effective(botSet, botThick);
+        double lh = layerHeight ?? 0, first = num("initial_layer_print_height") ?? num("first_layer_height") ?? lh;
+        double topMm = topEff * lh, botMm = botEff > 0 ? first + (botEff - 1) * lh : 0;
 
         // Raster über alle Extrusionen
         var ext = layers.SelectMany(l => l.Segments).Where(s => s.Extrusion > 0).ToList();
         if (ext.Count == 0)
-            return new(new(topSet, topThick, topEff, null, null, 0), new(botSet, botThick, botEff, null, null, 0), []);
+            return new(new(topSet, topThick, topEff, null, null, 0) { EffectiveThickness = topMm },
+                new(botSet, botThick, botEff, null, null, 0) { EffectiveThickness = botMm }, []);
         float x0 = ext.Min(s => Math.Min(s.From.X, s.To.X)), y0 = ext.Min(s => Math.Min(s.From.Y, s.To.Y));
         int nx = (int)((ext.Max(s => Math.Max(s.From.X, s.To.X)) - x0) / Cell) + 1;
         int ny = (int)((ext.Max(s => Math.Max(s.From.Y, s.To.Y)) - y0) / Cell) + 1;
@@ -90,8 +97,8 @@ public sealed record ShellAnalysis(ShellSide Top, ShellSide Bottom, IReadOnlyLis
             return new ShellSide(set, thick, eff, counts.Count > 0 ? counts.Min() : null, counts.Count > 0 ? counts.Average() : null, thin);
         }
 
-        var topSide = Measure(true, topSet, topThick, topEff);
-        var botSide = Measure(false, botSet, botThick, botEff);
+        var topSide = Measure(true, topSet, topThick, topEff) with { EffectiveThickness = topMm };
+        var botSide = Measure(false, botSet, botThick, botEff) with { EffectiveThickness = botMm };
         return new ShellAnalysis(topSide, botSide, spots);
     }
 

@@ -131,9 +131,10 @@ public partial class MainWindow : Window
         var shells = r.Shells;
         if (shells.ThinSpots.Count > 0)
             hints.Add(Info("Dünne Schalenstellen", $"{N(shells.ThinSpots.Count, 0)} Stellen", new SolidColorBrush(PathScene.ThinShellColor)));
-        // "Schalen oben" = effektiv, in Klammern eingestellt (Anzahl / Mindestdicke)
+        // "Schalen oben" = effektiv mit Dicke, dahinter die Einstellung (Anzahl, Mindestdicke)
         Row[] ShellRows(string side, ShellSide s) => [
-            new($"Schalen {side}", $"{s.Effective} Layer ({s.SetLayers}" + (s.SetThickness > 0 ? $" / {N(s.SetThickness, 2)} mm)" : ")")),
+            new($"Schalen {side}", $"{s.Effective} Layer = {N(s.EffectiveThickness, 2)} mm (eingestellt: {s.SetLayers} Layer"
+                + (s.SetThickness > 0 ? $", mind. {N(s.SetThickness, 2)} mm)" : ")")),
             new($"Schalen {side} gemessen", s.MeasuredMin is { } mn ? $"min. {mn} | Ø {N(s.MeasuredAvg ?? 0, 1)}" : "–",
                 s.MeasuredMin < s.Effective ? new SolidColorBrush(PathScene.ThinShellColor) : null),
         ];

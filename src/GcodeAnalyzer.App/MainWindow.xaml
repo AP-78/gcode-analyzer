@@ -30,7 +30,7 @@
                     </Path>
                 </Button>
                 <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190"
-                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0">
+                           TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0">
                     <TextBlock.Style>
                         <!-- Statusfarbe nur, wenn gesetzt; sonst Textfarbe des Themes -->
                         <Style TargetType="TextBlock">
