@@ -9,7 +9,7 @@ using Microsoft.Win32;
 
 namespace GcodeAnalyzer.App;
 
-public record Row(string Label, string Value);
+public record Row(string Label, string Value, Brush? Brush = null);
 public record Section(string Title, IReadOnlyList<Row> Rows);
 public record LegendItem(PathCategory Category, string Name, Brush Brush) { public bool IsVisible { get; set; } }
 
@@ -81,6 +81,14 @@ public partial class MainWindow : Window
             hints.Add(new($"{r.ShortLayers.Count} Layer unter {N(r.MinLayerTime, 0)} s",
                 string.Join(", ", r.ShortLayers.Take(8).Select(i => i + 1)) + (r.ShortLayers.Count > 8 ? " …" : "")));
 
+        var walls = r.Walls;
+        var under = walls.Layers.Where(w => w.Status == WallStatus.Underrun).ToList();
+        var expected = walls.Layers.Where(w => w.Status == WallStatus.ExpectedDeviation).ToList();
+        if (under.Count > 0)
+            hints.Add(new($"Wand-Unterschreitung in {under.Count} Layern",
+                string.Join(", ", under.Take(8).Select(w => w.Layer + 1)) + (under.Count > 8 ? " …" : ""), StatusBrush(WallStatus.Underrun)));
+        var minWall = walls.Layers.MinBy(w => w.Loops);
+
         Sections.ItemsSource = new[]
         {
             new Section("Druckstatistik", [
@@ -94,6 +102,14 @@ public partial class MainWindow : Window
             new Section("Anteile (Filament | Zeit)", r.Shares.OrderByDescending(kv => kv.Value.TimePercent)
                 .Select(kv => new Row(PathScene.Styles[kv.Key].Name, $"{N(kv.Value.FilamentPercent, 1)} % | {N(kv.Value.TimePercent, 1)} %"))
                 .ToList()),
+            new Section("Wände", [
+                new("Soll-Wandstärke", walls.TargetLoops > 0 ? $"{walls.TargetLoops} Schleifen | {N(walls.TargetThickness, 2)} mm" : "–"),
+                new("Ist-Wandstärke min.", minWall is null ? "–" : $"{N(minWall.Loops, 1)} Schleifen | {N(minWall.Thickness, 2)} mm",
+                    minWall is null ? null : StatusBrush(minWall.Status)),
+                new("Layer wie Soll", N(walls.Layers.Count(w => w.Status == WallStatus.Ok), 0)),
+                new("Erwartete Abweichung", N(expected.Count, 0), StatusBrush(WallStatus.ExpectedDeviation)),
+                new("Wand-Unterschreitung", N(under.Count, 0), under.Count > 0 ? StatusBrush(WallStatus.Underrun) : null),
+            ]),
             new Section("Infill", [
                 new("Muster", r.InfillPattern is { Length: > 0 } pat ? char.ToUpper(pat[0]) + pat[1..] : "–"),
                 new("Dichte", r.InfillDensity is { } dens ? $"{N(dens, 0)} %" : "–"),
@@ -134,6 +150,8 @@ public partial class MainWindow : Window
         double fill = l.SolidFillMm + l.SparseFillMm;
         _layerRows.Add(new("Z | Höhe", $"{N(l.Z, 2)} mm | {N(l.Height, 2)} mm"));
         _layerRows.Add(new("Zeit", $"{N(l.Time, 1)} s"));
+        if (_result.Walls.Layers.FirstOrDefault(w => w.Layer == i) is { } lw)
+            _layerRows.Add(new("Wandschleifen | Ist-Wandstärke", $"{N(lw.Loops, 1)} | {N(lw.Thickness, 2)} mm", StatusBrush(lw.Status)));
         _layerRows.Add(new("Füllung massiv | Sparse", fill > 0 ? $"{N(l.SolidFillMm / fill * 100, 0)} % | {N(l.SparseFillMm / fill * 100, 0)} %" : "–"));
     }
 
@@ -196,6 +214,21 @@ public partial class MainWindow : Window
         _scene.Rebuild();
         _scene.ShowUpTo((int)LayerSlider.Value - 1);
     }
+
+    void OnMarkWallsClick(object sender, RoutedEventArgs e)
+    {
+        if (_scene == null) return;
+        _scene.MarkWalls = MarkWallsToggle.IsChecked == true;
+        _scene.Rebuild();
+        _scene.ShowUpTo((int)LayerSlider.Value - 1);
+    }
+
+    static Brush? StatusBrush(WallStatus s) => s switch
+    {
+        WallStatus.Underrun => new SolidColorBrush(PathScene.UnderrunColor),
+        WallStatus.ExpectedDeviation => Brushes.Gray,
+        _ => null,
+    };
 
     void OnGridClick(object sender, RoutedEventArgs e)
     {

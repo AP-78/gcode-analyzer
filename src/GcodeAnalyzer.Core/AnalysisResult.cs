@@ -42,6 +42,8 @@ public sealed record AnalysisResult
     public double MinLayerTime { get; init; }
     public required IReadOnlyList<int> ShortLayers { get; init; }
 
+    public required WallAnalysis Walls { get; init; }
+
     /// <summary>Infill-Einstellungen; Dichte in Prozent, Linienbreite in mm.</summary>
     public string? InfillPattern { get; init; }
     public double? InfillDensity { get; init; }

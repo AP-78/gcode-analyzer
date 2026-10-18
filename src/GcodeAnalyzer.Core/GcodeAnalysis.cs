@@ -236,6 +236,7 @@ public static partial class GcodeAnalysis
             InfillPattern = settings.GetValueOrDefault("sparse_infill_pattern") ?? settings.GetValueOrDefault("fill_pattern"),
             InfillDensity = Num(settings, "sparse_infill_density") ?? Num(settings, "fill_density"),
             InfillLineWidth = Num(settings, "sparse_infill_line_width") ?? Num(settings, "infill_extrusion_width"),
+            Walls = WallAnalysis.From(layers, k => Num(settings, k)),
             Bed = ParseBed(settings.GetValueOrDefault("printable_area") ?? settings.GetValueOrDefault("bed_shape")),
         };
     }

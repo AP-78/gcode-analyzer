@@ -65,6 +65,10 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <Separator Margin="0,4"/>
+                    <CheckBox x:Name="MarkWallsToggle" IsChecked="True" Checked="OnMarkWallsClick" Unchecked="OnMarkWallsClick"
+                              ToolTip="Wandpfade rot bei Wand-Unterschreitung, grau bei erwarteter Abweichung">
+                        <TextBlock Text="Wand-Abweichungen" Foreground="White"/>
+                    </CheckBox>
                     <CheckBox x:Name="GridToggle" IsChecked="True" Checked="OnGridClick" Unchecked="OnGridClick">
                         <TextBlock Text="Raster" Foreground="White"/>
                     </CheckBox>
@@ -99,7 +103,7 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <DockPanel Margin="0,2">
-                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190"
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontWeight="SemiBold" MaxWidth="190" Foreground="{Binding Brush, TargetNullValue={x:Static SystemColors.ControlTextBrush}}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Value}" Margin="8,0,0,0"/>
                                                 <TextBlock Text="{Binding Label}" Foreground="#555"/>
                                             </DockPanel>

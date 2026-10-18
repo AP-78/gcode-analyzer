@@ -39,10 +39,15 @@ public sealed class PathScene
     public GroupModel3D Root { get; } = new();
     public LineGeometryModel3D Grid { get; }
     public HashSet<PathCategory> Visible { get; }
+    /// <summary>Wandpfade von Layern mit Wand-Unterschreitung rot, mit erwarteter Abweichung grau zeichnen.</summary>
+    public bool MarkWalls { get; set; } = true;
+    readonly Dictionary<int, WallStatus> _wallStatus;
+    public static readonly Media.Color UnderrunColor = Rgb(0xFF2020), ExpectedColor = Rgb(0xA0A0A0);
 
     public PathScene(AnalysisResult result)
     {
         _result = result;
+        _wallStatus = result.Walls.Layers.ToDictionary(w => w.Layer, w => w.Status);
         Visible = result.Layers.SelectMany(l => l.Segments).Select(s => s.Category).Where(c => c != PathCategory.Travel).ToHashSet();
         _models = result.Layers.Select(_ => new LineGeometryModel3D { Thickness = 1, Color = Colors.White }).ToArray();
         foreach (var m in _models) Root.Children.Add(m);
@@ -66,10 +71,13 @@ public sealed class PathScene
             var idx = new IntCollection();
             var bright = new Color4Collection();
             var dim = new Color4Collection();
+            var status = MarkWalls ? _wallStatus.GetValueOrDefault(i) : WallStatus.Ok;
             foreach (var s in _result.Layers[i].Segments)
             {
                 if (!Visible.Contains(s.Category)) continue;
-                var v = ToVec(Styles[s.Category].Color);
+                bool wall = s.Category is PathCategory.OuterWall or PathCategory.InnerWall;
+                var v = ToVec(!wall || status == WallStatus.Ok ? Styles[s.Category].Color
+                    : status == WallStatus.Underrun ? UnderrunColor : ExpectedColor);
                 var c = ToColor4(v);
                 var d = ToColor4(Vector4.Lerp(v, Background, 0.55f));
                 idx.Add(pos.Count); pos.Add(s.From);
