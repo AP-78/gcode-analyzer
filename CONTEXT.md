@@ -71,7 +71,7 @@ Anzahl, die der Slicer aus den eingestellten Werten tatsächlich verwendet (das 
 Anzahl massiver Layer, die in der G-Code-Datei an einer Stelle tatsächlich übereinander gedruckt werden.
 
 **Dünne Schalenstelle**:
-Ort, an dem weniger gemessene als effektive Schalenschichten übereinanderliegen.
+Ort über (oder unter) Sparse-Infill, an dem weniger gemessene als effektive Schalenschichten übereinanderliegen. Durchgehend massive Bereiche haben keine Schale und zählen nicht.
 
 ### Support
 

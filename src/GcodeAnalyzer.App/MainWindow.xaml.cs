@@ -88,6 +88,15 @@ public partial class MainWindow : Window
             hints.Add(new($"Wand-Unterschreitung in {under.Count} Layern",
                 string.Join(", ", under.Take(8).Select(w => w.Layer + 1)) + (under.Count > 8 ? " …" : ""), StatusBrush(WallStatus.Underrun)));
         var minWall = walls.Layers.MinBy(w => w.Loops);
+        var shells = r.Shells;
+        if (shells.ThinSpots.Count > 0)
+            hints.Add(new("Dünne Schalenstellen", $"{N(shells.ThinSpots.Count, 0)} Stellen", new SolidColorBrush(PathScene.ThinShellColor)));
+        Row[] ShellRows(string side, ShellSide s) => [
+            new($"{side} eingestellt", s.SetThickness > 0 ? $"{s.SetLayers} Layer | {N(s.SetThickness, 2)} mm" : $"{s.SetLayers} Layer"),
+            new($"{side} effektiv", $"{s.Effective} Layer"),
+            new($"{side} gemessen", s.MeasuredMin is { } mn ? $"min. {mn} | Ø {N(s.MeasuredAvg ?? 0, 1)}" : "–",
+                s.MeasuredMin < s.Effective ? new SolidColorBrush(PathScene.ThinShellColor) : null),
+        ];
 
         Sections.ItemsSource = new[]
         {
@@ -109,6 +118,9 @@ public partial class MainWindow : Window
                 new("Layer wie Soll", N(walls.Layers.Count(w => w.Status == WallStatus.Ok), 0)),
                 new("Erwartete Abweichung", N(expected.Count, 0), StatusBrush(WallStatus.ExpectedDeviation)),
                 new("Wand-Unterschreitung", N(under.Count, 0), under.Count > 0 ? StatusBrush(WallStatus.Underrun) : null),
+            ]),
+            new Section("Schalen", [.. ShellRows("Oben", shells.Top), .. ShellRows("Unten", shells.Bottom),
+                new("Dünne Schalenstellen", N(shells.ThinSpots.Count, 0), shells.ThinSpots.Count > 0 ? new SolidColorBrush(PathScene.ThinShellColor) : null),
             ]),
             new Section("Infill", [
                 new("Muster", r.InfillPattern is { Length: > 0 } pat ? char.ToUpper(pat[0]) + pat[1..] : "–"),
@@ -161,6 +173,7 @@ public partial class MainWindow : Window
         _scene = new PathScene(r);
         SceneRoot.Children.Add(_scene.Root);
         _scene.Grid.Visibility = GridToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        OnThinShellsClick(this, null!);
         Legend.ItemsSource = _scene.Present
             .Select(c => new LegendItem(c, PathScene.Styles[c].Name, new SolidColorBrush(PathScene.Styles[c].Color)) { IsVisible = _scene.Visible.Contains(c) })
             .ToList();
@@ -229,6 +242,11 @@ public partial class MainWindow : Window
         WallStatus.ExpectedDeviation => Brushes.Gray,
         _ => null,
     };
+
+    void OnThinShellsClick(object sender, RoutedEventArgs e)
+    {
+        if (_scene != null) _scene.ThinShells.Visibility = ThinShellsToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     void OnGridClick(object sender, RoutedEventArgs e)
     {

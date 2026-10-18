@@ -38,11 +38,13 @@ public sealed class PathScene
 
     public GroupModel3D Root { get; } = new();
     public LineGeometryModel3D Grid { get; }
+    /// <summary>Kreuze an dünnen Schalenstellen.</summary>
+    public LineGeometryModel3D ThinShells { get; }
     public HashSet<PathCategory> Visible { get; }
     /// <summary>Wandpfade von Layern mit Wand-Unterschreitung rot, mit erwarteter Abweichung grau zeichnen.</summary>
     public bool MarkWalls { get; set; } = true;
     readonly Dictionary<int, WallStatus> _wallStatus;
-    public static readonly Media.Color UnderrunColor = Rgb(0xFF2020), ExpectedColor = Rgb(0xA0A0A0);
+    public static readonly Media.Color UnderrunColor = Rgb(0xFF2020), ExpectedColor = Rgb(0xA0A0A0), ThinShellColor = Rgb(0xFF00FF);
 
     public PathScene(AnalysisResult result)
     {
@@ -53,6 +55,15 @@ public sealed class PathScene
         foreach (var m in _models) Root.Children.Add(m);
         Grid = BuildGrid(result);
         Root.Children.Add(Grid);
+        var tb = new LineBuilder();
+        foreach (var t in result.Shells.ThinSpots)
+        {
+            var z = result.Layers[t.Layer].Z + 0.05f;
+            tb.AddLine(new Vector3(t.X - 0.5f, t.Y - 0.5f, z), new Vector3(t.X + 0.5f, t.Y + 0.5f, z));
+            tb.AddLine(new Vector3(t.X - 0.5f, t.Y + 0.5f, z), new Vector3(t.X + 0.5f, t.Y - 0.5f, z));
+        }
+        ThinShells = new LineGeometryModel3D { Geometry = result.Shells.ThinSpots.Count > 0 ? tb.ToLineGeometry3D() : null, Color = ThinShellColor, Thickness = 2 };
+        Root.Children.Add(ThinShells);
         Rebuild();
     }
 

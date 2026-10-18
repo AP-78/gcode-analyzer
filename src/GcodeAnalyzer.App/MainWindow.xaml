@@ -69,6 +69,10 @@
                               ToolTip="Wandpfade rot bei Wand-Unterschreitung, grau bei erwarteter Abweichung">
                         <TextBlock Text="Wand-Abweichungen" Foreground="White"/>
                     </CheckBox>
+                    <CheckBox x:Name="ThinShellsToggle" IsChecked="True" Checked="OnThinShellsClick" Unchecked="OnThinShellsClick"
+                              ToolTip="Magenta Kreuze, wo weniger Schalenschichten gemessen als effektiv eingestellt sind">
+                        <TextBlock Text="Dünne Schalenstellen" Foreground="White"/>
+                    </CheckBox>
                     <CheckBox x:Name="GridToggle" IsChecked="True" Checked="OnGridClick" Unchecked="OnGridClick">
                         <TextBlock Text="Raster" Foreground="White"/>
                     </CheckBox>
