@@ -42,6 +42,11 @@ public sealed record AnalysisResult
     public double MinLayerTime { get; init; }
     public required IReadOnlyList<int> ShortLayers { get; init; }
 
+    /// <summary>Infill-Einstellungen; Dichte in Prozent, Linienbreite in mm.</summary>
+    public string? InfillPattern { get; init; }
+    public double? InfillDensity { get; init; }
+    public double? InfillLineWidth { get; init; }
+
     /// <summary>Druckbett aus <c>printable_area</c> (Ecken min/max), sonst null.</summary>
     public (float MinX, float MinY, float MaxX, float MaxY)? Bed { get; init; }
 }

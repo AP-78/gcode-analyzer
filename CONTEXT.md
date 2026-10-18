@@ -32,6 +32,10 @@ _Avoid_: Travel, Leerfahrt
 Extrudiertes Kunststoffvolumen pro Zeit in mm³/s.
 _Avoid_: Flow, Durchfluss
 
+**Massive Füllung**:
+Alle Pfade eines Layers, die eine Fläche lückenlos füllen: Massiv-Infill, Oberfläche, Unterseite und Brücke.
+_Avoid_: Solid Fill, Vollfüllung
+
 ### Wände
 
 **Wandschleife**:

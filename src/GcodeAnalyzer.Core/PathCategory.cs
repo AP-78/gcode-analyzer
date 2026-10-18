@@ -16,13 +16,21 @@ public readonly record struct Segment(Vector3 From, Vector3 To, PathCategory Cat
 }
 
 /// <summary>Time: Druckzeit des Layers in Sekunden, auf die Slicer-Gesamtzeit skaliert.</summary>
-public sealed record Layer(int Index, float Z, float Height, Segment[] Segments, double Time = 0);
+public sealed record Layer(int Index, float Z, float Height, Segment[] Segments, double Time = 0)
+{
+    /// <summary>Filament der massiven Füllung (Massiv-Infill, Oberfläche, Unterseite, Brücke) in mm.</summary>
+    public double SolidFillMm => Segments.Where(s => s.Category.IsSolidFill()).Sum(s => (double)s.Extrusion);
+    public double SparseFillMm => Segments.Where(s => s.Category == PathCategory.SparseInfill).Sum(s => (double)s.Extrusion);
+}
 
 /// <summary>Anteil einer Pfad-Kategorie an Filament und Druckzeit.</summary>
 public sealed record CategoryShare(double FilamentMm, double Seconds, double FilamentPercent, double TimePercent);
 
 public static class PathCategories
 {
+    public static bool IsSolidFill(this PathCategory c) =>
+        c is PathCategory.SolidInfill or PathCategory.TopSurface or PathCategory.BottomSurface or PathCategory.Bridge;
+
     // Markierungen von OrcaSlicer/Bambu Studio und PrusaSlicer.
     static readonly Dictionary<string, PathCategory> Map = new(StringComparer.OrdinalIgnoreCase)
     {

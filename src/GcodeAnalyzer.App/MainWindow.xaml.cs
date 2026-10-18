@@ -17,6 +17,8 @@ public partial class MainWindow : Window
 {
     static readonly CultureInfo De = CultureInfo.GetCultureInfo("de-DE");
     PathScene? _scene;
+    AnalysisResult? _result;
+    readonly System.Collections.ObjectModel.ObservableCollection<Row> _layerRows = [];
 
     public MainWindow()
     {
@@ -72,7 +74,7 @@ public partial class MainWindow : Window
     {
         Title = $"{r.FileName} – G-Code-Analyzer";
         Preview.Source = ToImage(r.Thumbnail);
-        ShowScene(r);
+        _result = r;
 
         var hints = new List<Row>();
         if (r.ShortLayers.Count > 0)
@@ -92,6 +94,15 @@ public partial class MainWindow : Window
             new Section("Anteile (Filament | Zeit)", r.Shares.OrderByDescending(kv => kv.Value.TimePercent)
                 .Select(kv => new Row(PathScene.Styles[kv.Key].Name, $"{N(kv.Value.FilamentPercent, 1)} % | {N(kv.Value.TimePercent, 1)} %"))
                 .ToList()),
+            new Section("Infill", [
+                new("Muster", r.InfillPattern is { Length: > 0 } pat ? char.ToUpper(pat[0]) + pat[1..] : "–"),
+                new("Dichte", r.InfillDensity is { } dens ? $"{N(dens, 0)} %" : "–"),
+                new("Linienbreite", r.InfillLineWidth is { } lw ? $"{N(lw, 2)} mm" : "–"),
+                new("Sparse-Infill (Filament | Zeit)", r.Shares.TryGetValue(PathCategory.SparseInfill, out var sp)
+                    ? $"{N(sp.FilamentPercent, 1)} % | {N(sp.TimePercent, 1)} %" : "–"),
+                new("Layer mit massiver Füllung", N(r.Layers.Count(l => l.SolidFillMm > 0), 0)),
+                new("Layer nur mit Sparse-Infill", N(r.Layers.Count(l => l.SolidFillMm == 0 && l.SparseFillMm > 0), 0)),
+            ]),
             new Section("Abmessungen", [
                 new("Breite (X)", $"{N(r.Width, 1)} mm"),
                 new("Tiefe (Y)", $"{N(r.Depth, 1)} mm"),
@@ -110,7 +121,20 @@ public partial class MainWindow : Window
                 new("Größe", $"{N(r.FileSize / 1024.0 / 1024.0, 1)} MB"),
                 new("Slicer", r.SlicerName is null ? "unbekannt" : $"{r.SlicerName} {r.SlicerVersion}"),
             ]),
-        }.Prepend(new Section("Hinweise", hints)).Where(sec => sec.Rows.Count > 0).ToList();
+        }.Prepend(new Section("Aktueller Layer", _layerRows))
+         .Prepend(new Section("Hinweise", hints)).Where(sec => sec.Rows.Count > 0 || sec.Rows == _layerRows).ToList();
+        ShowScene(r);
+    }
+
+    void UpdateLayerRows(int i)
+    {
+        _layerRows.Clear();
+        if (_result is null || i < 0 || i >= _result.LayerCount) return;
+        var l = _result.Layers[i];
+        double fill = l.SolidFillMm + l.SparseFillMm;
+        _layerRows.Add(new("Z | Höhe", $"{N(l.Z, 2)} mm | {N(l.Height, 2)} mm"));
+        _layerRows.Add(new("Zeit", $"{N(l.Time, 1)} s"));
+        _layerRows.Add(new("Füllung massiv | Sparse", fill > 0 ? $"{N(l.SolidFillMm / fill * 100, 0)} % | {N(l.SparseFillMm / fill * 100, 0)} %" : "–"));
     }
 
     void ShowScene(AnalysisResult r)
@@ -154,6 +178,7 @@ public partial class MainWindow : Window
         int n = (int)LayerSlider.Value;
         _scene.ShowUpTo(n - 1);
         Chart.Current = n - 1;
+        UpdateLayerRows(n - 1);
         LayerText.Text = $"{n} / {(int)LayerSlider.Maximum}";
     }
 
