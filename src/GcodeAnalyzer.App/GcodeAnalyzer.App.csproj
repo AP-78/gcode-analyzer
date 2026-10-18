@@ -21,7 +21,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyName>GcodeAnalyzer</AssemblyName>
     <Product>G-Code-Analyzer</Product>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <!-- WPF0001: ThemeMode (Fluent) ist in .NET 9 als experimentell markiert -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
     <!-- dotnet publish: eine selbstständige, komprimierte .exe ohne installiertes .NET -->
