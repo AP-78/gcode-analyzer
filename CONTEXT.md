@@ -4,6 +4,8 @@ Windows-Programm, das eine fertig gesliced G-Code-Datei liest und zeigt, was tat
 
 ## Language
 
+Die Begriffe gelten für alle deutschen Texte (Oberfläche, Doku, Tickets). Code ist englisch benannt; dort sind die englischen Übersetzungen der Begriffe erlaubt (z. B. `Travel` für Fahrweg, `Loops` für Wandschleifen), die _Avoid_-Listen betreffen nur deutsche Texte.
+
 ### Datei und Einstellungen
 
 **G-Code-Datei**:
@@ -27,6 +29,14 @@ _Avoid_: Feature-Typ, Linientyp
 **Fahrweg**:
 Bewegung ohne Extrusion.
 _Avoid_: Travel, Leerfahrt
+
+**Retract**:
+Zurückziehen des Filaments vor einem Fahrweg, per negativem Vorschub oder Firmware-Befehl; mehrere Rückzüge hintereinander zählen als einer.
+_Avoid_: Rückzug, Einzug
+
+**Z-Hop**:
+Kurzes Anheben der Düse während eines Fahrwegs, damit sie den Druck nicht streift.
+_Avoid_: Z-Lift, Anheben
 
 **Volumenstrom**:
 Extrudiertes Kunststoffvolumen pro Zeit in mm³/s.
