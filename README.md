@@ -4,6 +4,8 @@ Windows-Programm, das fertig geslicte G-Code-Dateien auswertet und in 3D zeigt. 
 
 ![Übersicht: 3D-Ansicht, Legende, Layerzeiten und Seitenleiste](docs/screenshots/uebersicht.png)
 
+*Das gezeigte Modell stammt nicht von mir: [Playstation Icons Lights Lamp (LED Remix)](https://www.printables.com/model/361676-playstation-icons-lights-lamp-led-remix) von [PossTheBoss](https://www.printables.com/@PossTheBoss_526062), siehe [Drittanbieter](#drittanbieter).*
+
 ## Funktionen
 
 - **Favoriten** ganz oben in der Seitenleiste: Wandschleifen, Schalenschichten oben und unten sowie Infill-Muster und -Dichte auf einen Blick. Jede Zeile lässt sich per Stern anheften oder lösen, die Auswahl bleibt gespeichert.
@@ -76,3 +78,4 @@ Die Arbeit wird über die GitHub-Issues geplant. Die Spec steht in Issue #1.
 
 - Icons: [Font Awesome Free](https://fontawesome.com) 7.3.1 (über Web Awesome) von Fonticons, Inc., lizenziert unter [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Die Pfade sind in `src/GcodeAnalyzer.App/Icons.xaml` eingebettet.
 - 3D-Darstellung: [Helix Toolkit](https://github.com/helix-toolkit/helix-toolkit) (MIT-Lizenz).
+- Modell in den Screenshots: [Playstation Icons Lights Lamp (LED Remix)](https://www.printables.com/model/361676-playstation-icons-lights-lamp-led-remix) von [PossTheBoss](https://www.printables.com/@PossTheBoss_526062), ein Remix von [Playstation Icons Lights](https://www.printables.com/model/233258-playstation-icons-lights) von [aelkaim](https://www.printables.com/@aelkaim_301204), lizenziert unter [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Die Screenshots zeigen den von mir geslicten G-Code dieses Modells.
