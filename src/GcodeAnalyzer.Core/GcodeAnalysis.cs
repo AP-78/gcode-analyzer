@@ -34,6 +34,8 @@ public static partial class GcodeAnalysis
         double? nozzle = null, bed = null;
         var pts = new List<Vector3>();
         double layerTime = 0;                    // ungeskaliert, ohne Beschleunigung
+        int retracts = 0, zHops = 0;
+        bool retracted = false;
         var catTime = new double[Enum.GetValues<PathCategory>().Length];
         var catE = new double[catTime.Length];
 
@@ -132,6 +134,9 @@ public static partial class GcodeAnalysis
                     if (nz is { } zv) to.Z = relXyz ? to.Z + zv : zv;
                     double de = 0;
                     if (ne is { } ev) { de = relE ? ev : ev - e; e = relE ? e + ev : ev; }
+                    if (de < 0 && !retracted) { retracts++; retracted = true; }
+                    else if (de > 0) retracted = false;
+                    if (de <= 0 && to.Z < pos.Z && knownXY) zHops++; // Z-Hop endet mit Absenken ohne Extrusion
                     float speed = (float)(f / 60);
                     if (to == pos)
                     {
@@ -177,6 +182,7 @@ public static partial class GcodeAnalysis
                 }
                 case "G90": relXyz = false; relE = false; break;
                 case "G91": relXyz = true; relE = true; break;
+                case "G10": retracts++; break;
                 case "M82": relE = false; break;
                 case "M83": relE = true; break;
                 case "G92":
@@ -204,6 +210,24 @@ public static partial class GcodeAnalysis
                 shares[(PathCategory)c] = new CategoryShare(catE[c], catTime[c] * scale,
                     sumE > 0 ? catE[c] / sumE * 100 : 0, sumT > 0 ? catTime[c] * scale / sumT * 100 : 0);
 
+        double diameter = Num(settings, "filament_diameter") ?? 1.75;
+        float area = (float)(Math.PI * diameter * diameter / 4);
+        double flowLimit = Num(settings, "filament_max_volumetric_speed") ?? 20;
+        double maxFlow = 0, travel = 0;
+        var overFlow = new List<int>();
+        foreach (var l in layers)
+        {
+            bool over = false;
+            foreach (var sg in l.Segments)
+            {
+                if (sg.Category == PathCategory.Travel) { travel += sg.Length; continue; }
+                double fl = sg.VolumetricFlow(area);
+                maxFlow = Math.Max(maxFlow, fl);
+                over |= fl > flowLimit * 1.02; // Rundung der E-Werte im G-Code
+            }
+            if (over) overFlow.Add(l.Index);
+        }
+
         double minLayerTime = Num(settings, "slow_down_layer_time") ?? Num(settings, "slowdown_below_layer_time") ?? 8;
 
         bool any = maxX >= minX;
@@ -219,6 +243,13 @@ public static partial class GcodeAnalysis
             Layers = layers,
             EstimatedTime = estimated,
             Shares = shares,
+            FilamentDiameter = diameter,
+            MaxVolumetricFlow = maxFlow,
+            VolumetricFlowLimit = flowLimit,
+            OverFlowLayers = overFlow,
+            RetractCount = retracts,
+            ZHopCount = zHops,
+            TravelDistanceMm = travel,
             MinLayerTime = minLayerTime,
             ShortLayers = layers.Where(l => l.Time < minLayerTime).Select(l => l.Index).ToList(),
             FilamentLengthMm = Num(settings, "filament used [mm]"),
@@ -243,7 +274,7 @@ public static partial class GcodeAnalysis
         };
     }
 
-    /// <summary>Bogen um Mittelpunkt start+ij in Stücke von ca. 0,5 mm zerlegen; Z wird linear mitgeführt.</summary>
+    /// <summary>Bogen um Mittelpunkt start+ij in Stücke von höchstens 0,5 mm und 10° zerlegen (Sehne ≈ Bogen); Z wird linear mitgeführt.</summary>
     static void Arc(Vector3 from, Vector3 to, Vector2 ij, bool clockwise, List<Vector3> pts)
     {
         var c = new Vector2(from.X, from.Y) + ij;
@@ -253,7 +284,7 @@ public static partial class GcodeAnalysis
         float sweep = a1 - a0;
         if (clockwise) { if (sweep >= 0) sweep -= 2 * MathF.PI; }
         else if (sweep <= 0) sweep += 2 * MathF.PI;
-        int n = Math.Clamp((int)MathF.Ceiling(MathF.Abs(sweep) * r / ArcStepMm), 1, 720);
+        int n = Math.Clamp((int)MathF.Ceiling(Math.Max(MathF.Abs(sweep) * r / ArcStepMm, MathF.Abs(sweep) / (MathF.PI / 18))), 1, 720);
         for (int i = 1; i < n; i++)
         {
             float t = (float)i / n, a = a0 + sweep * t;

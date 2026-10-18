@@ -9,6 +9,8 @@ using Media = System.Windows.Media;
 
 namespace GcodeAnalyzer.App;
 
+public enum ColorMode { Category, Speed, Flow, LayerTime }
+
 /// <summary>Ein Linienmodell pro Layer; der Layer-Regler schaltet nur Sichtbarkeit und Farben um.</summary>
 public sealed class PathScene
 {
@@ -44,12 +46,28 @@ public sealed class PathScene
     /// <summary>Wandpfade von Layern mit Wand-Unterschreitung rot, mit erwarteter Abweichung grau zeichnen.</summary>
     public bool MarkWalls { get; set; } = true;
     readonly Dictionary<int, WallStatus> _wallStatus;
+    public ColorMode Mode { get; set; } = ColorMode.Category;
+    readonly double _maxSpeed, _maxFlow, _minTime, _maxTime;
+
+    /// <summary>Wertebereich der aktuellen Einfärbung für die Legende.</summary>
+    public (double Min, double Max, string Unit) Range => Mode switch
+    {
+        ColorMode.Speed => (0, _maxSpeed, "mm/s"),
+        ColorMode.Flow => (0, _maxFlow, "mm³/s"),
+        ColorMode.LayerTime => (_minTime, _maxTime, "s"),
+        _ => (0, 0, ""),
+    };
     public static readonly Media.Color UnderrunColor = Rgb(0xFF2020), ExpectedColor = Rgb(0xA0A0A0), ThinShellColor = Rgb(0xFF00FF);
 
     public PathScene(AnalysisResult result)
     {
         _result = result;
         _wallStatus = result.Walls.Layers.ToDictionary(w => w.Layer, w => w.Status);
+        var ext = result.Layers.SelectMany(l => l.Segments).Where(sg => sg.Category != PathCategory.Travel && sg.Extrusion > 0).ToList();
+        _maxSpeed = Math.Max(1, ext.Count > 0 ? ext.Max(sg => sg.Speed) : 1);
+        _maxFlow = Math.Max(result.VolumetricFlowLimit, result.MaxVolumetricFlow);
+        _minTime = result.Layers.Count > 0 ? result.Layers.Min(l => l.Time) : 0;
+        _maxTime = Math.Max(_minTime + 1, result.Layers.Count > 0 ? result.Layers.Max(l => l.Time) : 1);
         Visible = result.Layers.SelectMany(l => l.Segments).Select(s => s.Category).Where(c => c != PathCategory.Travel).ToHashSet();
         _models = result.Layers.Select(_ => new LineGeometryModel3D { Thickness = 1, Color = Colors.White }).ToArray();
         foreach (var m in _models) Root.Children.Add(m);
@@ -87,8 +105,15 @@ public sealed class PathScene
             {
                 if (!Visible.Contains(s.Category)) continue;
                 bool wall = s.Category is PathCategory.OuterWall or PathCategory.InnerWall;
-                var v = ToVec(!wall || status == WallStatus.Ok ? Styles[s.Category].Color
-                    : status == WallStatus.Underrun ? UnderrunColor : ExpectedColor);
+                var v = Mode == ColorMode.Category || s.Category == PathCategory.Travel
+                    ? ToVec(!wall || status == WallStatus.Ok ? Styles[s.Category].Color
+                        : status == WallStatus.Underrun ? UnderrunColor : ExpectedColor)
+                    : Heat(Mode switch
+                    {
+                        ColorMode.Speed => s.Speed / _maxSpeed,
+                        ColorMode.Flow => s.VolumetricFlow(_result.FilamentArea) / _maxFlow,
+                        _ => (_result.Layers[i].Time - _minTime) / (_maxTime - _minTime),
+                    });
                 var c = ToColor4(v);
                 var d = ToColor4(Vector4.Lerp(v, Background, 0.55f));
                 idx.Add(pos.Count); pos.Add(s.From);
@@ -129,6 +154,16 @@ public sealed class PathScene
     }
 
     static Media.Color Rgb(int v) => Media.Color.FromRgb((byte)(v >> 16), (byte)(v >> 8), (byte)v);
+    /// <summary>Farbverlauf blau → cyan → grün → gelb → rot für 0..1.</summary>
+    public static readonly Media.Color[] HeatStops = [Rgb(0x2050FF), Rgb(0x20D0FF), Rgb(0x30D040), Rgb(0xFFE14D), Rgb(0xFF2020)];
+
+    static Vector4 Heat(double t)
+    {
+        t = Math.Clamp(t, 0, 1) * (HeatStops.Length - 1);
+        int k = Math.Min((int)t, HeatStops.Length - 2);
+        return Vector4.Lerp(ToVec(HeatStops[k]), ToVec(HeatStops[k + 1]), (float)(t - k));
+    }
+
     static Color4 ToColor4(Vector4 v) => new(v.X, v.Y, v.Z, v.W);
     static Vector4 ToVec(Media.Color c) => new(c.R / 255f, c.G / 255f, c.B / 255f, 1);
 }

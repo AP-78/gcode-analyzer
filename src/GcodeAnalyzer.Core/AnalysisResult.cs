@@ -46,6 +46,18 @@ public sealed record AnalysisResult
     public required ShellAnalysis Shells { get; init; }
     public required SupportAnalysis Support { get; init; }
 
+    public double FilamentDiameter { get; init; }
+    public float FilamentArea => (float)(Math.PI * FilamentDiameter * FilamentDiameter / 4);
+
+    /// <summary>Höchster Volumenstrom in mm³/s, Grenze aus der Datei (sonst 20) und Layer-Indizes darüber.</summary>
+    public double MaxVolumetricFlow { get; init; }
+    public double VolumetricFlowLimit { get; init; }
+    public required IReadOnlyList<int> OverFlowLayers { get; init; }
+
+    public int RetractCount { get; init; }
+    public int ZHopCount { get; init; }
+    public double TravelDistanceMm { get; init; }
+
     /// <summary>Infill-Einstellungen; Dichte in Prozent, Linienbreite in mm.</summary>
     public string? InfillPattern { get; init; }
     public double? InfillDensity { get; init; }

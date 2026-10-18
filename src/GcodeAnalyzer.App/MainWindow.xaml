@@ -51,6 +51,20 @@
             <Border x:Name="LegendPanel" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10"
                     Background="#C0202020" CornerRadius="4" Padding="8,6">
                 <StackPanel>
+                    <ComboBox x:Name="ColorModeBox" SelectedIndex="0" Margin="0,0,0,6" SelectionChanged="OnColorModeChanged"
+                              AutomationProperties.Name="Einfärbung">
+                        <ComboBoxItem>Pfad-Kategorie</ComboBoxItem>
+                        <ComboBoxItem>Geschwindigkeit</ComboBoxItem>
+                        <ComboBoxItem>Volumenstrom</ComboBoxItem>
+                        <ComboBoxItem>Layerzeit</ComboBoxItem>
+                    </ComboBox>
+                    <StackPanel x:Name="HeatLegend" Visibility="Collapsed" Margin="0,0,0,6">
+                        <Rectangle x:Name="HeatBar" Height="10"/>
+                        <DockPanel>
+                            <TextBlock x:Name="HeatMax" DockPanel.Dock="Right" Foreground="White" FontSize="11"/>
+                            <TextBlock x:Name="HeatMin" Foreground="White" FontSize="11"/>
+                        </DockPanel>
+                    </StackPanel>
                     <ItemsControl x:Name="Legend">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>

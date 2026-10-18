@@ -88,6 +88,10 @@ public partial class MainWindow : Window
             hints.Add(new($"Wand-Unterschreitung in {under.Count} Layern",
                 string.Join(", ", under.Take(8).Select(w => w.Layer + 1)) + (under.Count > 8 ? " …" : ""), StatusBrush(WallStatus.Underrun)));
         var minWall = walls.Layers.MinBy(w => w.Loops);
+        if (r.OverFlowLayers.Count > 0)
+            hints.Add(new($"Volumenstrom > {N(r.VolumetricFlowLimit, 0)} mm³/s in {r.OverFlowLayers.Count} Layern",
+                string.Join(", ", r.OverFlowLayers.Take(8).Select(i => i + 1)) + (r.OverFlowLayers.Count > 8 ? " …" : ""),
+                new SolidColorBrush(PathScene.UnderrunColor)));
         var sup = r.Support;
         var warn = new SolidColorBrush(Color.FromRgb(0xE0, 0x80, 0x00));
         if (sup.Contradiction)
@@ -110,6 +114,10 @@ public partial class MainWindow : Window
                 new("Filamentgewicht", r.FilamentWeightG is { } g ? $"{N(g, 2)} g" : "–"),
                 new("Filamentkosten", r.FilamentCost is { } c ? $"{N(c, 2)} €" : "–"),
                 new("Layer", N(r.LayerCount, 0)),
+                new("Max. Volumenstrom", $"{N(r.MaxVolumetricFlow, 1)} mm³/s (Grenze {N(r.VolumetricFlowLimit, 0)})",
+                    r.OverFlowLayers.Count > 0 ? new SolidColorBrush(PathScene.UnderrunColor) : null),
+                new("Retracts | Z-Hops", $"{N(r.RetractCount, 0)} | {N(r.ZHopCount, 0)}"),
+                new("Fahrweg (Strecke | Zeit)", $"{N(r.TravelDistanceMm / 1000, 1)} m | {N(r.Shares.GetValueOrDefault(PathCategory.Travel)?.TimePercent ?? 0, 1)} %"),
                 new("Zeilen", N(r.LineCount, 0)),
             ]),
             new Section("Anteile (Filament | Zeit)", r.Shares.OrderByDescending(kv => kv.Value.TimePercent)
@@ -181,10 +189,12 @@ public partial class MainWindow : Window
     void ShowScene(AnalysisResult r)
     {
         SceneRoot.Children.Clear();
-        _scene = new PathScene(r);
+        _scene = new PathScene(r) { Mode = (ColorMode)Math.Max(0, ColorModeBox.SelectedIndex) };
+        if (_scene.Mode != ColorMode.Category) _scene.Rebuild();
         SceneRoot.Children.Add(_scene.Root);
         _scene.Grid.Visibility = GridToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         OnThinShellsClick(this, null!);
+        UpdateHeatLegend();
         Legend.ItemsSource = _scene.Present
             .Select(c => new LegendItem(c, PathScene.Styles[c].Name, new SolidColorBrush(PathScene.Styles[c].Color)) { IsVisible = _scene.Visible.Contains(c) })
             .ToList();
@@ -253,6 +263,28 @@ public partial class MainWindow : Window
         WallStatus.ExpectedDeviation => Brushes.Gray,
         _ => null,
     };
+
+    void OnColorModeChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_scene == null) return;
+        _scene.Mode = (ColorMode)ColorModeBox.SelectedIndex;
+        _scene.Rebuild();
+        _scene.ShowUpTo((int)LayerSlider.Value - 1);
+        UpdateHeatLegend();
+    }
+
+    void UpdateHeatLegend()
+    {
+        if (_scene == null) return;
+        bool heat = _scene.Mode != ColorMode.Category;
+        HeatLegend.Visibility = heat ? Visibility.Visible : Visibility.Collapsed;
+        if (!heat) return;
+        var stops = new GradientStopCollection(PathScene.HeatStops.Select((c, k) => new GradientStop(c, k / (double)(PathScene.HeatStops.Length - 1))));
+        HeatBar.Fill = new LinearGradientBrush(stops, 0);
+        var (min, max, unit) = _scene.Range;
+        HeatMin.Text = $"{N(min, 0)} {unit}";
+        HeatMax.Text = $"{N(max, 0)} {unit}";
+    }
 
     void OnThinShellsClick(object sender, RoutedEventArgs e)
     {

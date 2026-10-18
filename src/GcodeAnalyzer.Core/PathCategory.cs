@@ -13,6 +13,9 @@ public enum PathCategory : byte
 public readonly record struct Segment(Vector3 From, Vector3 To, PathCategory Category, float Speed, float Extrusion)
 {
     public float Length => Vector3.Distance(From, To);
+
+    /// <summary>Volumenstrom in mm³/s bei Nenngeschwindigkeit; filamentArea in mm².</summary>
+    public float VolumetricFlow(float filamentArea) => Length > 0 ? Extrusion * filamentArea * Speed / Length : 0;
 }
 
 /// <summary>Time: Druckzeit des Layers in Sekunden, auf die Slicer-Gesamtzeit skaliert.</summary>
