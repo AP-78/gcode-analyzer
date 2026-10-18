@@ -124,11 +124,11 @@
 
         <ScrollViewer Grid.Row="1" Grid.Column="1" Margin="4,0,8,8" VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <Image x:Name="Preview" Stretch="Uniform" MaxHeight="180" Margin="0,0,0,8"/>
                 <ItemsControl x:Name="Sections">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Expander Header="{Binding Title}" IsExpanded="True" Margin="0,0,0,8" FontWeight="SemiBold">
+                                <StackPanel>
                                 <ItemsControl ItemsSource="{Binding Rows}" Margin="8,4,0,0" FontWeight="Normal">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -152,6 +152,9 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                <!-- Vorschaubild aus der G-Code-Datei (nur im Abschnitt "Datei") -->
+                                <Image Source="{Binding Image}" Stretch="Uniform" MaxHeight="180" Margin="0,8,0,0"/>
+                                </StackPanel>
                             </Expander>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

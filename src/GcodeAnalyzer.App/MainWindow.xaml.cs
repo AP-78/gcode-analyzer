@@ -10,7 +10,7 @@ using Microsoft.Win32;
 namespace GcodeAnalyzer.App;
 
 public record Row(string Label, string Value, Brush? Brush = null);
-public record Section(string Title, IReadOnlyList<Row> Rows);
+public record Section(string Title, IReadOnlyList<Row> Rows) { public ImageSource? Image { get; init; } }
 public record LegendItem(PathCategory Category, string Name, Brush Brush) { public bool IsVisible { get; set; } }
 
 public partial class MainWindow : Window
@@ -85,7 +85,6 @@ public partial class MainWindow : Window
     void Show(AnalysisResult r)
     {
         Title = $"{r.FileName} – G-Code-Analyzer";
-        Preview.Source = ToImage(r.Thumbnail);
         _result = r;
 
         var hints = r.Warnings.Select(w => new Row(w, "", new SolidColorBrush(Color.FromRgb(0xE0, 0x80, 0x00)))).ToList();
@@ -135,33 +134,6 @@ public partial class MainWindow : Window
             new Section("Anteile (Filament | Zeit)", r.Shares.OrderByDescending(kv => kv.Value.TimePercent)
                 .Select(kv => new Row(PathScene.Styles[kv.Key].Name, $"{N(kv.Value.FilamentPercent, 1)} % | {N(kv.Value.TimePercent, 1)} %"))
                 .ToList()),
-            new Section("Wände", [
-                new("Soll-Wandstärke", walls.TargetLoops > 0 ? $"{walls.TargetLoops} Schleifen | {N(walls.TargetThickness, 2)} mm" : "–"),
-                new("Ist-Wandstärke min.", minWall is null ? "–" : $"{N(minWall.Loops, 1)} Schleifen | {N(minWall.Thickness, 2)} mm",
-                    minWall is null ? null : StatusBrush(minWall.Status)),
-                new("Layer wie Soll", N(walls.Layers.Count(w => w.Status == WallStatus.Ok), 0)),
-                new("Erwartete Abweichung", N(expected.Count, 0), StatusBrush(WallStatus.ExpectedDeviation)),
-                new("Wand-Unterschreitung", N(under.Count, 0), under.Count > 0 ? StatusBrush(WallStatus.Underrun) : null),
-            ]),
-            new Section("Schalen", [.. ShellRows("Oben", shells.Top), .. ShellRows("Unten", shells.Bottom),
-                new("Dünne Schalenstellen", N(shells.ThinSpots.Count, 0), shells.ThinSpots.Count > 0 ? new SolidColorBrush(PathScene.ThinShellColor) : null),
-            ]),
-            new Section("Support", [
-                new("Aktiviert", sup.Enabled ? "ja" : "nein"),
-                new("Typ", sup.Type ?? "–"),
-                new("Nur auf Druckbett", sup.BuildPlateOnly is { } bp ? (bp ? "ja" : "nein") : "–"),
-                new("Support-Pfade", sup.HasPaths ? "vorhanden" : "keine", sup.Contradiction ? warn : null),
-                new("Anteil (Filament | Zeit)", sup.HasPaths ? $"{N(sup.FilamentPercent, 1)} % | {N(sup.TimePercent, 1)} %" : "–"),
-            ]),
-            new Section("Infill", [
-                new("Muster", r.InfillPattern is { Length: > 0 } pat ? char.ToUpper(pat[0]) + pat[1..] : "–"),
-                new("Dichte", r.InfillDensity is { } dens ? $"{N(dens, 0)} %" : "–"),
-                new("Linienbreite", r.InfillLineWidth is { } lw ? $"{N(lw, 2)} mm" : "–"),
-                new("Sparse-Infill (Filament | Zeit)", r.Shares.TryGetValue(PathCategory.SparseInfill, out var sp)
-                    ? $"{N(sp.FilamentPercent, 1)} % | {N(sp.TimePercent, 1)} %" : "–"),
-                new("Layer mit massiver Füllung", N(r.Layers.Count(l => l.SolidFillMm > 0), 0)),
-                new("Layer nur mit Sparse-Infill", N(r.Layers.Count(l => l.SolidFillMm == 0 && l.SparseFillMm > 0), 0)),
-            ]),
             new Section("Abmessungen", [
                 new("Breite (X)", $"{N(r.Width, 1)} mm"),
                 new("Tiefe (Y)", $"{N(r.Depth, 1)} mm"),
@@ -175,11 +147,38 @@ public partial class MainWindow : Window
                 new("Drucker", r.PrinterModel ?? "–"),
                 new("Filamenttyp", r.FilamentType ?? "–"),
             ]),
+            new Section("Wände", [
+                new("Soll-Wandstärke", walls.TargetLoops > 0 ? $"{walls.TargetLoops} Schleifen | {N(walls.TargetThickness, 2)} mm" : "–"),
+                new("Ist-Wandstärke min.", minWall is null ? "–" : $"{N(minWall.Loops, 1)} Schleifen | {N(minWall.Thickness, 2)} mm",
+                    minWall is null ? null : StatusBrush(minWall.Status)),
+                new("Layer wie Soll", N(walls.Layers.Count(w => w.Status == WallStatus.Ok), 0)),
+                new("Erwartete Abweichung", N(expected.Count, 0), StatusBrush(WallStatus.ExpectedDeviation)),
+                new("Wand-Unterschreitung", N(under.Count, 0), under.Count > 0 ? StatusBrush(WallStatus.Underrun) : null),
+            ]),
+            new Section("Schalen", [.. ShellRows("Oben", shells.Top), .. ShellRows("Unten", shells.Bottom),
+                new("Dünne Schalenstellen", N(shells.ThinSpots.Count, 0), shells.ThinSpots.Count > 0 ? new SolidColorBrush(PathScene.ThinShellColor) : null),
+            ]),
+            new Section("Infill", [
+                new("Muster", r.InfillPattern is { Length: > 0 } pat ? char.ToUpper(pat[0]) + pat[1..] : "–"),
+                new("Dichte", r.InfillDensity is { } dens ? $"{N(dens, 0)} %" : "–"),
+                new("Linienbreite", r.InfillLineWidth is { } lw ? $"{N(lw, 2)} mm" : "–"),
+                new("Sparse-Infill (Filament | Zeit)", r.Shares.TryGetValue(PathCategory.SparseInfill, out var sp)
+                    ? $"{N(sp.FilamentPercent, 1)} % | {N(sp.TimePercent, 1)} %" : "–"),
+                new("Layer mit massiver Füllung", N(r.Layers.Count(l => l.SolidFillMm > 0), 0)),
+                new("Layer nur mit Sparse-Infill", N(r.Layers.Count(l => l.SolidFillMm == 0 && l.SparseFillMm > 0), 0)),
+            ]),
+            new Section("Support", [
+                new("Aktiviert", sup.Enabled ? "ja" : "nein"),
+                new("Typ", sup.Type ?? "–"),
+                new("Nur auf Druckbett", sup.BuildPlateOnly is { } bp ? (bp ? "ja" : "nein") : "–"),
+                new("Support-Pfade", sup.HasPaths ? "vorhanden" : "keine", sup.Contradiction ? warn : null),
+                new("Anteil (Filament | Zeit)", sup.HasPaths ? $"{N(sup.FilamentPercent, 1)} % | {N(sup.TimePercent, 1)} %" : "–"),
+            ]),
             new Section("Datei", [
                 new("Name", r.FileName),
                 new("Größe", $"{N(r.FileSize / 1024.0 / 1024.0, 1)} MB"),
                 new("Slicer", r.SlicerName is null ? "unbekannt" : $"{r.SlicerName} {r.SlicerVersion}"),
-            ]),
+            ]) { Image = ToImage(r.Thumbnail) },
         }.Prepend(new Section("Aktueller Layer", _layerRows))
          .Prepend(new Section("Hinweise", hints)).Where(sec => sec.Rows.Count > 0 || sec.Rows == _layerRows).ToList();
         ShowScene(r);
